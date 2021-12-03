@@ -7,10 +7,20 @@ public:
     luactx_newstate_failed(): std::runtime_error("Failed to create lua state") {}
 };
 
-class luactx_cant_exec_file : public std::runtime_error {
+class luactx_cannot_open_file : public std::runtime_error {
 public:
-    luactx_cant_exec_file(const std::string& filename, const std::string& luaerror):
-        std::runtime_error("Failed to execute lua file: " + filename + ": " + luaerror) {}
+    luactx_cannot_open_file(const std::string& filename):
+        std::runtime_error("Cannot open lua script file: " + filename) {}
+};
+
+class luactx_syntax_error : public std::runtime_error {
+public:
+    luactx_syntax_error(const std::string& msg): std::runtime_error(msg) {}
+};
+
+class luactx_memory_error : public std::runtime_error {
+public:
+    luactx_memory_error(): std::runtime_error("lua memory error") {}
 };
 
 class luactx_panic : public std::runtime_error {
@@ -18,27 +28,50 @@ public:
     luactx_panic(const std::string& msg): std::runtime_error(msg) {}
 };
 
+struct lua_code {
+    std::string code;
+};
+
 class luactx {
 public:
-    luactx(const char* entry_file): l(luaL_newstate()) {
+    luactx(): l(luaL_newstate()) {
         if (!l)
             throw luactx_newstate_failed();
 
-        luaL_openlibs(l);
-        auto rc = luaL_loadfile(l, entry_file);
-        if (rc) {
-            lua_close(l);
-            throw luactx_cant_exec_file(entry_file, "can't open file");
-        }
-
-        rc = lua_pcall(l, 0, 0, 0);
-        if (rc) {
-            std::string error = lua_tostring(l, -1);
-            lua_close(l);
-            throw luactx_cant_exec_file(entry_file, error);
-        }
-
         lua_atpanic(l, panic_wrapper);
+        luaL_openlibs(l);
+    }
+
+    luactx(const char* entry_file): luactx() {
+        auto guard = luacpp_exception_guard{[l = this->l] {
+            lua_close(l);
+        }};
+
+        switch (luaL_loadfile(l, entry_file)) {
+        case LUA_ERRSYNTAX:
+            throw luactx_syntax_error(lua_tostring(l, -1));
+        case LUA_ERRMEM:
+            throw luactx_memory_error();
+        case LUA_ERRFILE:
+            throw luactx_cannot_open_file(entry_file);
+        }
+
+        lua_call(l, 0, 0);
+    }
+
+    luactx(const lua_code& code): luactx() {
+        auto guard = luacpp_exception_guard{[l = this->l] {
+            lua_close(l);
+        }};
+
+        switch (luaL_loadstring(l, code.code.data())) {
+        case LUA_ERRSYNTAX:
+            throw luactx_syntax_error(lua_tostring(l, -1));
+        case LUA_ERRMEM:
+            throw luactx_memory_error();
+        }
+
+        lua_call(l, 0, 0);
     }
 
     ~luactx() {

@@ -27,7 +27,15 @@ int lolkek(int v) {
 
 #include <vector>
 
+void test() {
+    luactx(lua_code{
+               "function main(a, b, c) print(string.format(\"function was called with args: %i %f %i\", a, b, c)) end"})
+        .extract<void(int, float, int)>(LUA_TNAME("main"))(228, 1337.1337f, 100);
+}
+
 int main() {
+    test();
+
     auto l = luactx("hellolua.lua");
 
 
