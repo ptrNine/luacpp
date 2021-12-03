@@ -32,6 +32,8 @@ struct lua_code {
     std::string code;
 };
 
+#include <iostream>
+
 class luactx {
 public:
     luactx(): l(luaL_newstate()) {
@@ -40,6 +42,8 @@ public:
 
         lua_atpanic(l, panic_wrapper);
         luaL_openlibs(l);
+
+        register_usertypes();
     }
 
     luactx(const char* entry_file): luactx() {
@@ -123,6 +127,29 @@ public:
 
     int top() {
         return lua_gettop(l);
+    }
+
+private:
+    void register_usertypes() {
+        using usertype_tuple = typename luacpp_usertype_list<0>::type;
+
+        static constexpr auto regtype = [](auto usertype, auto it) {
+            constexpr auto memclass = usertype.memclass();
+            if constexpr (memclass == luacpp_memclass::box) {
+                using T = decltype(usertype.type());
+                it->provide(usertype.lua_name().dot(LUA_TNAME("__gc")),
+                            [](luacpp_boxedtype_rawpointer<T> raw_p) {
+                                std::cout << "Deleted pointer: " << (void*)raw_p.ptr << std::endl;
+                                delete raw_p.ptr;
+                            });
+            }
+        };
+
+        static constexpr auto regall = []<size_t... Idxs>(auto it, std::index_sequence<Idxs...>) {
+            (regtype(std::tuple_element_t<Idxs, usertype_tuple>(), it), ...);
+        };
+
+        regall(this, std::make_index_sequence<std::tuple_size_v<usertype_tuple>>());
     }
 
 private:
