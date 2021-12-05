@@ -391,7 +391,9 @@ lua_CFunction _luacpp_wrap_function(luacpp_native_function<F, ReturnT, ArgsT...>
             return 1;
         }
     };
-    luacpp_func_storage<decltype(closure), decltype(function.function), UniqId>::instance().f = std::move(closure);
+    auto& func_storage = luacpp_func_storage<decltype(closure), decltype(function.function), UniqId>::instance();
+    func_storage.f = std::move(closure);
+    func_storage.rf = std::move(function.function);
 
     return &luacpp_wrapped_function<decltype(closure), decltype(function.function), UniqId>{}.call;
 }
@@ -488,6 +490,39 @@ lua_CFunction lua_provide(TName name, lua_State* l, F&& function) {
     auto lua_func = luacpp_wrap_function<hash>(std::forward<F>(function));
     lua_provide(name, l, lua_func);
     return lua_func;
+}
+
+namespace details
+{
+template <bool Const, typename ReturnT, typename ClassT, typename... ArgsT>
+struct luacpp_member_wrapper {
+    ReturnT operator()(ClassT& it, ArgsT... args) const {
+        return (it.*f)(args...);
+    }
+    std::conditional_t<Const, ReturnT (ClassT::*)(ArgsT...) const, ReturnT (ClassT::*)(ArgsT...)> f;
+};
+template <bool Const, typename F, typename ReturnT, typename ClassT, typename TName, typename... ArgsT>
+lua_CFunction _lua_provide_member_function(TName name, lua_State* l, F member_function) {
+    constexpr auto typespec = luacpp_type_registry::get_typespec<ClassT>();
+    constexpr auto fullname = typespec.lua_name().dot(name);
+    constexpr auto hash     = fullname.hash();
+    auto           lua_func =
+        luacpp_wrap_function<hash>(details::luacpp_member_wrapper<Const, ReturnT, ClassT, ArgsT...>{member_function});
+    lua_provide(fullname, l, lua_func);
+    return lua_func;
+}
+} // namespace details
+
+template <typename ReturnT, typename ClassT, typename TName, typename... ArgsT>
+lua_CFunction lua_provide(TName name, lua_State* l, ReturnT (ClassT::*member_function)(ArgsT...)) {
+    return details::_lua_provide_member_function<false, decltype(member_function), ReturnT, ClassT, TName, ArgsT...>(
+        name, l, member_function);
+}
+
+template <typename ReturnT, typename ClassT, typename TName, typename... ArgsT>
+lua_CFunction lua_provide(TName name, lua_State* l, ReturnT(ClassT::*member_function)(ArgsT...) const) {
+    return details::_lua_provide_member_function<true, decltype(member_function), ReturnT, ClassT, TName, ArgsT...>(
+        name, l, member_function);
 }
 
 class luacpp_access_error : public std::runtime_error {

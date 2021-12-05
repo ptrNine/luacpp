@@ -205,6 +205,10 @@ struct vec_sample {
         return *this;
     }
 
+    std::string tostring() const {
+        return std::to_string(x) + ", " + std::to_string(y) + ", " + std::to_string(z);
+    }
+
     ~vec_sample() {
         std::cout << "DELETED" << std::endl;
     }
