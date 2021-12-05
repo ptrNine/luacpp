@@ -45,3 +45,6 @@ NamespaceIndentation: Inner
 PenaltyReturnTypeOnItsOwnLine: 32
 PointerAlignment: Left
 SpaceBeforeCtorInitializerColon: false
+
+IndentRequires: true
+BreakBeforeConceptDeclarations: true

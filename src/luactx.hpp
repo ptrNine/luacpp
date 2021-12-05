@@ -98,6 +98,12 @@ public:
         return lua_provide(NameT{}, l, std::forward<T>(value));
     }
 
+    template <typename UserType, typename NameT, typename T>
+    auto provide_member(NameT, T&& value) {
+        return lua_provide(
+            luacpp_type_registry::get_typespec<UserType>().lua_name().dot(NameT{}), l, std::forward<T>(value));
+    }
+
     template <typename T, typename NameT>
     auto extract(NameT) {
         return luacpp_extract<T>(NameT{}, l);
@@ -131,6 +137,11 @@ public:
 
 private:
     void register_usertypes() {
+        luacpp_tforeach<luacpp_typespec_list>([this](auto typespec) {
+            using type = decltype(typespec.type());
+            provide(typespec.lua_name().dot(LUA_TNAME("_gc")), [](type* userdata) { userdata->~type(); });
+        });
+        /*
         using usertype_tuple = typename luacpp_usertype_list<0>::type;
 
         static constexpr auto regtype = [](auto usertype, auto it) {
@@ -150,6 +161,7 @@ private:
         };
 
         regall(this, std::make_index_sequence<std::tuple_size_v<usertype_tuple>>());
+        */
     }
 
 private:

@@ -104,24 +104,14 @@ void luacpp_push(lua_State* l, const LuaTupleLike auto& value) {
     (l, value, std::make_index_sequence<std::tuple_size_v<std::decay_t<decltype(value)>>>());
 }
 
-#include <iostream>
-
 template <LuaRegisteredType T>
 void luacpp_push(lua_State* l, const T& value) {
-    luacpp_userdata userdata;
-    userdata.index = lua_usertype_registry_s<0>::to_index<T>();
-    constexpr auto memclass = lua_usertype_registry_s<0>::memclass<T>();
-    if constexpr (memclass == luacpp_memclass::flat)
-        std::memcpy(userdata.raw, &value, sizeof(value));
-    if constexpr (memclass == luacpp_memclass::box) {
-        auto newvalue = new T(value);
-        std::cout << "New pointer: " << (void*)newvalue << std::endl;
-        std::memcpy(userdata.raw, &newvalue, sizeof(newvalue));
-    }
-
-    void* p = lua_newuserdata(l, sizeof(userdata));
-    std::memcpy(p, &userdata, sizeof(userdata));
-    lua_getglobal(l, lua_usertype_registry_s<0>::lua_name<T>().data());
+    void* p = lua_newuserdata(l, sizeof(uint64_t) + sizeof(value));
+    uint64_t type_index = luacpp_type_registry::get_index<T>();
+    std::memcpy(p, &type_index, sizeof(type_index));
+    void* data = reinterpret_cast<char*>(p) + sizeof(uint64_t);
+    new (data) T(value);
+    lua_getglobal(l, luacpp_type_registry::get_typespec<T>().lua_name().data());
     lua_setmetatable(l, -2);
 }
 
@@ -290,43 +280,32 @@ T luacpp_get(lua_State* l, int idx) {
     return result;
 }
 
-#include <iostream>
-
-template <LuaRegisteredType T>
+template <LuaRegisteredTypeRefOrPtr T>
 T luacpp_get(lua_State* l, int idx) {
     if (!lua_isuserdata(l, idx))
         throw luacpp_cast_error(l, idx, "this type can't be casted to C++ userdata type", __PRETTY_FUNCTION__);
 
-    // size_t sz  = lua_objlen(l, idx);
-    /* TODO: assert sz == sizeof(luacpp_userdata) */
-    void*           ptr = lua_touserdata(l, idx);
-    std::cout << "USERDATA: " << ptr << std::endl;
-    luacpp_userdata userdata;
-    std::memcpy(&userdata, ptr, sizeof(luacpp_userdata));
-    std::cout << "INDEX: " << userdata.index << std::endl;
+    size_t objlen = lua_objlen(l, idx);
+    constexpr size_t reallen = sizeof(uint64_t) + sizeof(std::remove_pointer_t<T>);
+    if (objlen != reallen)
+        throw luacpp_cast_error(l,
+                                idx,
+                                "userdata has invalid length (" + std::to_string(objlen) + " but should be " +
+                                    std::to_string(reallen) + ") ",
+                                __PRETTY_FUNCTION__);
 
-    if (!lua_usertype_registry_s<0>::dispatch_by_index(userdata, /* dummy */ 0))
-        throw luacpp_cast_error(
-            l, idx, "dispatch by userdata index failed, because type was not registered", __PRETTY_FUNCTION__);
+    /* TODO: check address alignment for this */
+    void* ptr = lua_touserdata(l, idx);
+    uint64_t type_index;
+    std::memcpy(&type_index, ptr, sizeof(type_index));
 
-    constexpr auto memclass = lua_usertype_registry_s<0>::memclass<T>();
-    if constexpr (memclass == luacpp_memclass::flat) {
-        T result;
-        std::memcpy(&result, userdata.raw, sizeof(result));
-        return result;
-    }
-    if constexpr (memclass == luacpp_memclass::box) {
-        uintptr_t p;
-        std::memcpy(&p, userdata.raw, sizeof(p));
-        if constexpr (BoxedTypeRawPointer<T>) {
-            auto ptr = reinterpret_cast<typename T::type*>(p);
-            return T{ptr};
-        }
-        else {
-            auto ptr = reinterpret_cast<T*>(p);
-            return ptr;
-        }
-    }
+    using pointer_t = std::conditional_t<std::is_pointer_v<T>, T, T*>;
+    auto data = reinterpret_cast<pointer_t>(reinterpret_cast<char*>(ptr) + sizeof(uint64_t)); // NOLINT
+
+    if constexpr (std::is_pointer_v<T>)
+        return data;
+    else
+        return *data;
 }
 
 
@@ -341,17 +320,13 @@ struct luacpp_func_storage {
         return f(state, rf);
     }
 
-    //std::function<int(lua_State*)> f;
     F f;
     RF rf;
 };
 
-#include <iostream>
-
 template <typename F, typename RF, uint64_t UniqId>
 struct luacpp_wrapped_function {
     static int call(lua_State* state) {
-        std::cout << "CALLED SHIT" << std::endl;
         return luacpp_func_storage<F, RF, UniqId>::instance().call(state);
     }
 };

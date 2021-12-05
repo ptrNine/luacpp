@@ -53,7 +53,8 @@ constexpr auto lua_tname_divide_result(T1, T2) {
 }
 
 template <char... Cs>
-requires(LuaValidNameChar<Cs>&&...) struct lua_tname {
+    requires(LuaValidNameChar<Cs>&&...)
+struct lua_tname {
     static constexpr const char _storage[] = {Cs..., '\0'};
 
     constexpr const char* data() const {
@@ -114,18 +115,75 @@ requires(LuaValidNameChar<Cs>&&...) struct lua_tname {
 //template <typename T, T... Cs>
 //constexpr lua_tname<Cs...> operator""_tname() { return {}; }
 
-enum class luacpp_memclass { flat = 0, box };
-
-template <typename Type, luacpp_memclass MemoryClass, auto LuaName>
-struct luacpp_usertype {
-    constexpr Type            type();
-    constexpr luacpp_memclass memclass() const {
-        return MemoryClass;
-    }
+template <typename Type, auto LuaName>
+struct luacpp_typespec {
+    constexpr Type type() const;
     constexpr auto lua_name() const {
         return LuaName;
     }
 };
 
-template <int>
-struct luacpp_usertype_list;
+namespace details
+{
+struct telement_transparent_type {
+    template <typename T>
+    constexpr T operator+(T) const {
+        return {};
+    }
+    template <typename T>
+    friend constexpr T operator+(T, telement_transparent_type) {
+        return {};
+    }
+    constexpr telement_transparent_type operator+(telement_transparent_type) {
+        return {};
+    }
+};
+
+template <bool v, typename T>
+constexpr auto tget_type_or_transparent() {
+    if constexpr (v)
+        return T{};
+    else
+        return telement_transparent_type{};
+}
+
+template <size_t Idx, typename... ArgsT>
+    requires(Idx < sizeof...(ArgsT))
+constexpr auto telement(std::tuple<ArgsT...>) {
+    constexpr auto f = []<size_t... Idxs>(std::index_sequence<Idxs...>) {
+        return (tget_type_or_transparent<Idx == Idxs, ArgsT>() + ...);
+    };
+    return decltype(f(std::make_index_sequence<sizeof...(ArgsT)>()))();
+}
+} // namespace details
+
+template <typename T>
+constexpr size_t luacpp_tuniqfind(auto&& f) {
+    return []<size_t... Idxs>(auto&& f, std::index_sequence<Idxs...>) {
+        return ((f(details::telement<Idxs>(T{})) ? Idxs + 1U : 0U) + ... + 0U) - 1U;
+    }
+    (f, std::make_index_sequence<std::tuple_size_v<T>>());
+}
+
+template <typename T>
+constexpr void luacpp_tforeach(auto&& f) {
+    []<typename... ArgsT>(auto&& f, std::tuple<ArgsT...>) {
+        (f(ArgsT()), ...);
+    }(f, T{});
+}
+
+
+#include <string>
+#include <iostream>
+
+struct vec_sample {
+    float x, y, z;
+
+    ~vec_sample() {
+        std::cout << "DELETED" << std::endl;
+    }
+};
+
+using luacpp_typespec_list = std::tuple<luacpp_typespec<std::string_view, LUA_TNAME("strview")>,
+                                        luacpp_typespec<std::u16string_view, LUA_TNAME("strview2")>,
+                                        luacpp_typespec<vec_sample, LUA_TNAME("vec_sample")>>;
