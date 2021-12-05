@@ -140,6 +140,9 @@ private:
         luacpp_tforeach<luacpp_typespec_list>([this](auto typespec) {
             using type = decltype(typespec.type());
             provide(typespec.lua_name().dot(LUA_TNAME("_gc")), [](type* userdata) { userdata->~type(); });
+
+            if constexpr (requires { luacpp_usertype_method_loader<type>(); })
+                luacpp_usertype_method_loader<type>()(*this);
         });
         /*
         using usertype_tuple = typename luacpp_usertype_list<0>::type;

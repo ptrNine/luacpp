@@ -205,7 +205,7 @@ struct vec_sample {
         return *this;
     }
 
-    std::string tostring() const {
+    std::string tostring() const noexcept {
         return std::to_string(x) + ", " + std::to_string(y) + ", " + std::to_string(z);
     }
 
@@ -217,3 +217,6 @@ struct vec_sample {
 using luacpp_typespec_list = std::tuple<luacpp_typespec<std::string_view, LUA_TNAME("strview")>,
                                         luacpp_typespec<std::u16string_view, LUA_TNAME("strview2")>,
                                         luacpp_typespec<vec_sample, LUA_TNAME("vec_sample")>>;
+
+template <typename T>
+struct luacpp_usertype_method_loader;
