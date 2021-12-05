@@ -179,6 +179,32 @@ constexpr void luacpp_tforeach(auto&& f) {
 struct vec_sample {
     float x, y, z;
 
+    vec_sample(float ix, float iy, float iz): x(ix), y(iy), z(iz) {}
+
+    vec_sample(const vec_sample& v): x(v.x), y(v.y), z(v.z) {
+        std::cout << "Copy CTOR" << std::endl;
+    }
+
+    vec_sample(vec_sample&& v) noexcept: x(v.x), y(v.y), z(v.z) {
+        std::cout << "Move CTOR" << std::endl;
+    }
+
+    vec_sample& operator=(const vec_sample& v) {
+        std::cout << "Copy asignment" << std::endl;
+        x = v.x;
+        y = v.y;
+        z = v.z;
+        return *this;
+    }
+
+    vec_sample& operator=(vec_sample&& v) noexcept {
+        std::cout << "Move asignment" << std::endl;
+        x = v.x;
+        y = v.y;
+        z = v.z;
+        return *this;
+    }
+
     ~vec_sample() {
         std::cout << "DELETED" << std::endl;
     }

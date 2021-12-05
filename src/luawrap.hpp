@@ -15,7 +15,13 @@ template <typename T>
 concept LuaNumber = (std::is_integral_v<T> || std::is_floating_point_v<T>) && !std::same_as<T, bool>;
 
 template <typename T>
+concept LuaNumberOrRef = LuaNumber<std::decay_t<T>>;
+
+template <typename T>
 concept LuaStringLike = std::same_as<T, std::string> || std::same_as<T, std::string_view>;
+
+template <typename T>
+concept LuaStringLikeOrRef = LuaStringLike<std::decay_t<T>>;
 
 template <typename T>
 concept LuaListLike = !LuaStringLike<T> && requires(const T& v) {
@@ -24,14 +30,23 @@ concept LuaListLike = !LuaStringLike<T> && requires(const T& v) {
 };
 
 template <typename T>
+concept LuaListLikeOrRef = LuaListLike<std::decay_t<T>>;
+
+template <typename T>
 concept LuaArrayLike = LuaListLike<T> && requires(const T& v) {
     { end(v) - begin(v) } -> std::convertible_to<size_t>;
 };
 
 template <typename T>
+concept LuaArrayLikeOrRef = LuaArrayLike<std::decay_t<T>>;
+
+template <typename T>
 concept LuaPushBackable = !LuaStringLike<T> && requires(T& v) {
     {v.push_back(std::declval<decltype(*v.begin())>())};
 };
+
+template <typename T>
+concept LuaPushBackableOrRef = LuaPushBackable<std::decay_t<T>>;
 
 template <typename T>
 concept LuaStaticSettable = !LuaStringLike<T> && !LuaPushBackable<T> && requires(T & v) {
@@ -40,9 +55,15 @@ concept LuaStaticSettable = !LuaStringLike<T> && !LuaPushBackable<T> && requires
 };
 
 template <typename T>
+concept LuaStaticSettableOrRef = LuaStaticSettable<std::decay_t<T>>;
+
+template <typename T>
 concept LuaTupleLike = requires {
     std::tuple_size<T>::value;
 };
+
+template <typename T>
+concept LuaTupleLikeOrRef = LuaTupleLike<std::decay_t<T>>;
 
 template <typename T> requires std::same_as<T, bool>
 inline void luacpp_push(lua_State* l, T value) {
@@ -105,14 +126,16 @@ void luacpp_push(lua_State* l, const LuaTupleLike auto& value) {
 }
 
 template <LuaRegisteredType T>
-void luacpp_push(lua_State* l, const T& value) {
-    void* p = lua_newuserdata(l, sizeof(uint64_t) + sizeof(value));
+T& luacpp_push(lua_State* l, const T& value) {
+    void*    p          = lua_newuserdata(l, sizeof(uint64_t) + sizeof(value));
     uint64_t type_index = luacpp_type_registry::get_index<T>();
     std::memcpy(p, &type_index, sizeof(type_index));
-    void* data = reinterpret_cast<char*>(p) + sizeof(uint64_t);
-    new (data) T(value);
+    void* data = reinterpret_cast<char*>(p) + sizeof(uint64_t); // NOLINT
+    auto  ptr  = new (data) T(value);                           // NOLINT
     lua_getglobal(l, luacpp_type_registry::get_typespec<T>().lua_name().data());
     lua_setmetatable(l, -2);
+
+    return *ptr;
 }
 
 template <typename T> requires std::same_as<T, lua_CFunction>
@@ -153,23 +176,25 @@ requires std::is_pointer_v<T> T luacpp_get(lua_State* l, int idx) {
 */
 
 template <typename T>
-requires std::same_as<T, bool> T luacpp_get(lua_State* l, int idx) {
+    requires std::same_as<std::decay_t<T>, bool>
+auto luacpp_get(lua_State* l, int idx) {
     if (lua_isboolean(l, idx))
         return lua_toboolean(l, idx);
     else
         throw luacpp_cast_error(l, idx, "this type can't be casted to C++ bool", __PRETTY_FUNCTION__);
 }
 
-template <LuaNumber T>
-T luacpp_get(lua_State* l, int idx) {
+template <LuaNumberOrRef T>
+auto luacpp_get(lua_State* l, int idx) {
     if (lua_isnumber(l, idx))
-        return T(lua_tonumber(l, idx));
+        return std::decay_t<T>(lua_tonumber(l, idx));
     else
         throw luacpp_cast_error(l, idx, "this type can't be casted to C++ number", __PRETTY_FUNCTION__);
 }
 
 template <typename T>
-requires std::same_as<T, std::string> T luacpp_get(lua_State* l, int idx) {
+    requires std::same_as<std::decay_t<T>, std::string>
+auto luacpp_get(lua_State* l, int idx) {
     if (lua_isstring(l, idx)) {
         size_t len;
         auto   str = lua_tolstring(l, idx, &len);
@@ -181,7 +206,7 @@ requires std::same_as<T, std::string> T luacpp_get(lua_State* l, int idx) {
 
 namespace details {
     template <typename T>
-    T _luacpp_array_getnext(lua_State * l, int index_check) {
+    auto _luacpp_array_getnext(lua_State * l, int index_check) {
         if (!lua_isnumber(l, -2))
             throw luacpp_cast_error(l, -3, "some key of lua table is not a number", __PRETTY_FUNCTION__);
 
@@ -194,11 +219,11 @@ namespace details {
     }
 } // namespace details
 
-template <LuaPushBackable T>
-T luacpp_get(lua_State* l, int idx) {
+template <LuaPushBackableOrRef T>
+auto luacpp_get(lua_State* l, int idx) {
     if (!lua_istable(l, idx))
         throw luacpp_cast_error(l, idx, "this type can't be casted to C++ array-like container", __PRETTY_FUNCTION__);
-    T result;
+    std::decay_t<T> result;
     using value_t = std::decay_t<decltype(*result.begin())>;
 
     /* For using relative stack pos */
@@ -221,11 +246,11 @@ T luacpp_get(lua_State* l, int idx) {
     return result;
 }
 
-template <LuaStaticSettable T>
-T luacpp_get(lua_State* l, int idx) {
+template <LuaStaticSettableOrRef T>
+auto luacpp_get(lua_State* l, int idx) {
     if (!lua_istable(l, idx))
         throw luacpp_cast_error(l, idx, "this type can't be casted to C++ array-like container", __PRETTY_FUNCTION__);
-    T result;
+    std::decay_t<T> result;
     if (lua_objlen(l, idx) != size(result))
         throw luacpp_cast_error(l, idx, "array lengths do not match", __PRETTY_FUNCTION__);
 
@@ -249,11 +274,11 @@ T luacpp_get(lua_State* l, int idx) {
     return result;
 }
 
-template <LuaTupleLike T>
-T luacpp_get(lua_State* l, int idx) {
+template <LuaTupleLikeOrRef T>
+auto luacpp_get(lua_State* l, int idx) {
     if (!lua_istable(l, idx))
         throw luacpp_cast_error(l, idx, "this type can't be casted to C++ tuple-like type", __PRETTY_FUNCTION__);
-    T result;
+    std::decay_t<T> result;
     if (lua_objlen(l, idx) != std::tuple_size_v<T>)
         throw luacpp_cast_error(l, idx, "lua table and tuple lengths do not match", __PRETTY_FUNCTION__);
 
@@ -280,6 +305,7 @@ T luacpp_get(lua_State* l, int idx) {
     return result;
 }
 
+/* This is the only thing that can return references */
 template <LuaRegisteredTypeRefOrPtr T>
 T luacpp_get(lua_State* l, int idx) {
     if (!lua_isuserdata(l, idx))
@@ -299,7 +325,7 @@ T luacpp_get(lua_State* l, int idx) {
     uint64_t type_index;
     std::memcpy(&type_index, ptr, sizeof(type_index));
 
-    using pointer_t = std::conditional_t<std::is_pointer_v<T>, T, T*>;
+    using pointer_t = std::conditional_t<std::is_pointer_v<T>, T, std::decay_t<T>*>;
     auto data = reinterpret_cast<pointer_t>(reinterpret_cast<char*>(ptr) + sizeof(uint64_t)); // NOLINT
 
     if constexpr (std::is_pointer_v<T>)
@@ -350,14 +376,14 @@ lua_CFunction _luacpp_wrap_function(luacpp_native_function<F, ReturnT, ArgsT...>
 
         if constexpr (std::is_same_v<ReturnT, void>) {
             []<size_t... Idxs>([[maybe_unused]] lua_State * l, auto&& function, std::index_sequence<Idxs...>) {
-                return function(luacpp_get<std::decay_t<ArgsT>>(l, int(Idxs + 1))...);
+                return function(luacpp_get<ArgsT>(l, int(Idxs + 1))...);
             }
             (l, function, std::make_index_sequence<sizeof...(ArgsT)>());
             return 0;
         }
         else {
             auto result = []<size_t... Idxs>(lua_State * l, auto&& function, std::index_sequence<Idxs...>) {
-                return function(luacpp_get<std::decay_t<ArgsT>>(l, int(Idxs + 1))...);
+                return function(luacpp_get<ArgsT>(l, int(Idxs + 1))...);
             }
             (l, function, std::make_index_sequence<sizeof...(ArgsT)>());
 
@@ -398,7 +424,7 @@ auto luacpp_wrap_function(F&& function) {
 
 namespace details {
     template <typename TName>
-    void _lua_recursive_provide_namespaced_value(TName name, lua_State* l, auto&& value) {
+    decltype(auto) _lua_recursive_provide_namespaced_value(TName name, lua_State* l, auto&& value) {
         constexpr auto dotsplit = name.template divide_by<'.'>();
         if constexpr (dotsplit) {
             static_assert(dotsplit.left().size() > 0, "Attempt to declare lua table with empty name");
@@ -410,20 +436,26 @@ namespace details {
                 lua_pushvalue(l, -2);
                 lua_rawset(l, -4);
             }
-            _lua_recursive_provide_namespaced_value(dotsplit.right(), l, value);
-            lua_pop(l, 1);
+            auto pop_on_scope_exit = luacpp_finalizer{[&] {
+                lua_pop(l, 1);
+            }};
+            return _lua_recursive_provide_namespaced_value(dotsplit.right(), l, value);
         }
         else {
             static_assert(name.size() > 0, "Attempt to declare lua function with empty name");
             lua_pushstring(l, name.data());
-            luacpp_push(l, value);
-            lua_rawset(l, -3);
+
+            auto rawset_on_scope_exit = luacpp_finalizer{[&]{
+                lua_rawset(l, -3);
+            }};
+
+            return luacpp_push(l, value);
         }
     }
 }
 
 template <typename T, typename TName>
-auto lua_provide(TName name, lua_State* l, T&& value) {
+decltype(auto) lua_provide(TName name, lua_State* l, T&& value) {
     constexpr auto dotsplit = name.template divide_by<'.'>();
     if constexpr (dotsplit) {
         static_assert(dotsplit.left().size() > 0, "Attempt to declare lua table with empty name");
@@ -434,13 +466,19 @@ auto lua_provide(TName name, lua_State* l, T&& value) {
             lua_pushvalue(l, -1);
             lua_setglobal(l, dotsplit.left().data());
         }
-        details::_lua_recursive_provide_namespaced_value(dotsplit.right(), l, value);
-        lua_pop(l, 1);
+
+        auto pop_on_scope_exit = luacpp_finalizer{[&] {
+            lua_pop(l, 1);
+        }};
+
+        return details::_lua_recursive_provide_namespaced_value(dotsplit.right(), l, value);
     }
     else {
         static_assert(name.size() > 0, "Attempt to declare lua function with empty name");
-        luacpp_push(l, value);
-        lua_setglobal(l, name.data());
+        auto setglobal = luacpp_finalizer{[&] {
+            lua_setglobal(l, name.data());
+        }};
+        return luacpp_push(l, value);
     }
 }
 
@@ -482,7 +520,7 @@ int luacpp_access(TName name, lua_State* l, int stack_depth = 0) {
 }
 
 template <typename T, typename TName>
-T luacpp_extract(TName, lua_State* l) {
+decltype(auto) luacpp_extract(TName, lua_State* l) {
     int  stack_depth = luacpp_access(TName{}, l);
     auto finalize    = luacpp_finalizer{[l, stack_depth] {
         lua_pop(l, stack_depth);

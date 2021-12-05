@@ -94,18 +94,18 @@ public:
     }
 
     template <typename NameT, typename T>
-    auto provide(NameT, T&& value) {
+    decltype(auto) provide(NameT, T&& value) {
         return lua_provide(NameT{}, l, std::forward<T>(value));
     }
 
     template <typename UserType, typename NameT, typename T>
-    auto provide_member(NameT, T&& value) {
+    decltype(auto) provide_member(NameT, T&& value) {
         return lua_provide(
             luacpp_type_registry::get_typespec<UserType>().lua_name().dot(NameT{}), l, std::forward<T>(value));
     }
 
     template <typename T, typename NameT>
-    auto extract(NameT) {
+    decltype(auto) extract(NameT) {
         return luacpp_extract<T>(NameT{}, l);
     }
 
