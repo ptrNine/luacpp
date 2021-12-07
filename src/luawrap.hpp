@@ -562,6 +562,11 @@ namespace details {
 template <typename F>
 struct lua_function_traits;
 
+template <typename T>
+struct lua_ttype {
+    T type() const;
+};
+
 struct lua_noarg {};
 
 template <typename ReturnT, typename... ArgsT>
@@ -569,12 +574,13 @@ struct lua_function_traits<ReturnT(*)(ArgsT...)> {
     static constexpr size_t arity = sizeof...(ArgsT);
     using return_t = ReturnT;
 
+
     template <size_t N>
     static constexpr auto arg_type() {
         if constexpr (N >= sizeof...(ArgsT))
-            return lua_noarg{};
+            return lua_ttype<lua_noarg>{};
         else
-            return std::tuple_element_t<N, std::tuple<ArgsT...>>{};
+            return lua_ttype<std::tuple_element_t<N, std::tuple<ArgsT...>>>{};
     }
 
     using arg_types = _luacpp_typelist<ArgsT...>;
@@ -637,9 +643,9 @@ int lua_overloaded_dispatch_by_arg_types(lua_State* l, F&& function, Fs&&...) {
 
 template <size_t arg_number, bool enable_call, typename F, typename... Fs>
 int lua_overloaded_dispatch_by_arg_types(lua_State* l, F&& function, Fs&&... functions) {
-    using arg_type = decltype(lua_function_traits<F>::template arg_type<arg_number>());
+    using arg_type = decltype(lua_function_traits<F>::template arg_type<arg_number>().type());
     constexpr auto same_arg_type =
-        LuaSameArgType<arg_type, decltype(lua_function_traits<Fs>::template arg_type<arg_number>())...>;
+        LuaSameArgType<arg_type, decltype(lua_function_traits<Fs>::template arg_type<arg_number>().type())...>;
 
     constexpr size_t max_args_count = lua_function_traits<F>::arity;
 
