@@ -205,6 +205,13 @@ struct vec_sample {
         return *this;
     }
 
+    void test(int) {
+        std::cout << __PRETTY_FUNCTION__ << std::endl;
+    }
+    void test(std::string) {
+        std::cout << __PRETTY_FUNCTION__ << std::endl;
+    }
+
     std::string tostring() const noexcept {
         return std::to_string(x) + ", " + std::to_string(y) + ", " + std::to_string(z);
     }

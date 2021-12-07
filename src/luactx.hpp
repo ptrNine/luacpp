@@ -98,9 +98,10 @@ public:
         return lua_provide(NameT{}, l, std::forward<T>(value));
     }
 
-    template <typename NameT, typename... Ts>
-    auto provide_overloaded(NameT, Ts&&... functions) {
-        return lua_provide(NameT{}, l, std::forward<Ts>(functions)...);
+    template <typename NameT, typename F1, typename F2, typename... Fs>
+    auto provide(NameT, F1&& function1, F2&& function2, Fs&&... functions) {
+        return lua_provide_overloaded(
+            NameT{}, l, std::forward<F1>(function1), std::forward<F2>(function2), std::forward<Fs>(functions)...);
     }
 
     template <typename UserType, typename NameT, typename T>
@@ -145,7 +146,6 @@ private:
         luacpp_tforeach<luacpp_typespec_list>([this](auto typespec) {
             using type = decltype(typespec.type());
             provide(typespec.lua_name().dot(LUA_TNAME("_gc")), [](type* userdata) { userdata->~type(); });
-
             if constexpr (requires { luacpp_usertype_method_loader<type>(); })
                 luacpp_usertype_method_loader<type>()(*this);
         });

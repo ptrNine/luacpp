@@ -133,6 +133,8 @@ T& luacpp_push(lua_State* l, const T& value) {
     void* data = reinterpret_cast<char*>(p) + sizeof(uint64_t); // NOLINT
     auto  ptr  = new (data) T(value);                           // NOLINT
     lua_getglobal(l, luacpp_type_registry::get_typespec<T>().lua_name().data());
+    lua_pushvalue(l, -1);
+    lua_setfield(l, -2, "__index");
     lua_setmetatable(l, -2);
 
     return *ptr;
@@ -559,6 +561,37 @@ auto luacpp_wrap_function(F&& function) {
 }
 
 namespace details {
+template <typename T>
+struct lua_member_function : std::false_type {};
+
+template <typename ReturnT, typename ClassT, typename... ArgsT>
+struct lua_member_function<ReturnT (ClassT::*)(ArgsT...)> : std::true_type {
+    static constexpr bool is_noexcept = false;
+    static constexpr bool is_const    = false;
+    using class_t = ClassT;
+};
+
+template <typename ReturnT, typename ClassT, typename... ArgsT>
+struct lua_member_function<ReturnT(ClassT::*)(ArgsT...) const> : std::true_type {
+    static constexpr bool is_noexcept = false;
+    static constexpr bool is_const    = true;
+    using class_t = ClassT;
+};
+
+template <typename ReturnT, typename ClassT, typename... ArgsT>
+struct lua_member_function<ReturnT(ClassT::*)(ArgsT...) noexcept> : std::true_type {
+    static constexpr bool is_noexcept = true;
+    static constexpr bool is_const    = false;
+    using class_t = ClassT;
+};
+
+template <typename ReturnT, typename ClassT, typename... ArgsT>
+struct lua_member_function<ReturnT(ClassT::*)(ArgsT...) const noexcept> : std::true_type {
+    static constexpr bool is_noexcept = true;
+    static constexpr bool is_const    = true;
+    using class_t = ClassT;
+};
+
 template <typename F>
 struct lua_function_traits;
 
@@ -622,15 +655,13 @@ constexpr auto lua_arity_fold(F&& function) {
         return lua_fold_element<>{};
 }
 
-template <typename>
-struct lua_type_tag {
-    constexpr lua_type_tag operator&&(lua_type_tag) const {
-        return *this;
-    }
+template <typename T, typename... Ts>
+struct lua_first_type {
+    using type = T;
 };
 
-template <typename... Ts>
-concept LuaSameArgType = requires { (lua_type_tag<Ts>{} + ...); };
+template <typename T, typename... Ts>
+static constexpr bool lua_same_types = (std::same_as<T, Ts> && ... && true);
 
 template <typename... CheckT>
 struct lua_type_list {};
@@ -645,7 +676,7 @@ template <size_t arg_number, bool enable_call, typename F, typename... Fs>
 int lua_overloaded_dispatch_by_arg_types(lua_State* l, F&& function, Fs&&... functions) {
     using arg_type = decltype(lua_function_traits<F>::template arg_type<arg_number>().type());
     constexpr auto same_arg_type =
-        LuaSameArgType<arg_type, decltype(lua_function_traits<Fs>::template arg_type<arg_number>().type())...>;
+        lua_same_types<arg_type, decltype(lua_function_traits<Fs>::template arg_type<arg_number>().type())...>;
 
     constexpr size_t max_args_count = lua_function_traits<F>::arity;
 
@@ -735,7 +766,10 @@ int lua_overloaded_call_dispatch_entry(lua_State* l, Fs&&... functions) {
         throw luacpp_call_cpp_error("no matched overloaded function (cannot call with " + std::to_string(args_count) +
                                     " arguments)");
 }
-}
+} // namespace details
+
+template <typename T>
+concept LuaMemberFunction = details::lua_member_function<T>::value;
 
 template <uint64_t UniqId, typename... Fs>
 auto luacpp_wrap_overloaded_functions(Fs&&... functions) {
@@ -817,7 +851,7 @@ lua_CFunction lua_provide(TName name, lua_State* l, F&& function) {
 }
 
 template <typename TName, LuaFunctionLike... Fs>
-lua_CFunction lua_provide(TName name, lua_State* l, Fs&&... functions) {
+lua_CFunction lua_provide_overloaded(TName name, lua_State* l, Fs&&... functions) {
     constexpr auto hash = name.hash();
     auto lua_func = luacpp_wrap_overloaded_functions<hash>(std::forward<Fs>(functions)...);
     lua_provide(name, l, lua_func);
@@ -828,6 +862,11 @@ namespace details
 {
 template <bool Noexcept, bool Const, typename ReturnT, typename ClassT, typename... ArgsT>
 struct luacpp_member_wrapper {
+    luacpp_member_wrapper() = default;
+
+    template <typename T>
+    luacpp_member_wrapper(T ifunc): f(ifunc) {}
+
     ReturnT operator()(ClassT& it, ArgsT... args) const {
         return (it.*f)(args...);
     }
@@ -837,16 +876,44 @@ struct luacpp_member_wrapper {
         std::conditional_t<Noexcept, ReturnT (ClassT::*)(ArgsT...) noexcept, ReturnT (ClassT::*)(ArgsT...)>>
         f;
 };
+
+template <typename ReturnT, typename ClassT, typename... ArgsT>
+luacpp_member_wrapper(ReturnT (ClassT::*)(ArgsT...)) -> luacpp_member_wrapper<false, false, ReturnT, ClassT, ArgsT...>;
+
+template <typename ReturnT, typename ClassT, typename... ArgsT>
+luacpp_member_wrapper(ReturnT (ClassT::*)(ArgsT...) const)
+    -> luacpp_member_wrapper<false, true, ReturnT, ClassT, ArgsT...>;
+
+template <typename ReturnT, typename ClassT, typename... ArgsT>
+luacpp_member_wrapper(ReturnT (ClassT::*)(ArgsT...) noexcept)
+    -> luacpp_member_wrapper<true, false, ReturnT, ClassT, ArgsT...>;
+
+template <typename ReturnT, typename ClassT, typename... ArgsT>
+luacpp_member_wrapper(ReturnT (ClassT::*)(ArgsT...) const noexcept)
+    -> luacpp_member_wrapper<true, true, ReturnT, ClassT, ArgsT...>;
+
 template <bool Noexcept, bool Const, typename F, typename ReturnT, typename ClassT, typename TName, typename... ArgsT>
 lua_CFunction _lua_provide_member_function(TName name, lua_State* l, F member_function) {
     constexpr auto typespec = luacpp_type_registry::get_typespec<ClassT>();
     constexpr auto fullname = typespec.lua_name().dot(name);
     constexpr auto hash     = fullname.hash();
-    auto           lua_func = luacpp_wrap_function<hash>(
-        details::luacpp_member_wrapper<Noexcept, Const, ReturnT, ClassT, ArgsT...>{member_function});
+    auto           lua_func = luacpp_wrap_function<hash>(luacpp_member_wrapper{member_function});
     lua_provide(fullname, l, lua_func);
     return lua_func;
 }
+
+template <typename TName, typename... Fs>
+    requires lua_same_types<typename lua_member_function<Fs>::class_t...>
+lua_CFunction _lua_provide_overloaded_member_function(TName name, lua_State* l, Fs... functions) {
+    constexpr auto typespec = luacpp_type_registry::get_typespec<
+        typename lua_first_type<typename lua_member_function<Fs>::class_t...>::type>();
+    constexpr auto fullname = typespec.lua_name().dot(name);
+    constexpr auto hash     = fullname.hash();
+    auto           lua_func = luacpp_wrap_overloaded_functions<hash>(luacpp_member_wrapper{functions}...);
+    lua_provide(fullname, l, lua_func);
+    return lua_func;
+}
+
 } // namespace details
 
 /* Handle const*noexcept
@@ -879,6 +946,11 @@ lua_CFunction lua_provide(TName name, lua_State* l, ReturnT (ClassT::*member_fun
     return details::
         _lua_provide_member_function<true, true, decltype(member_function), ReturnT, ClassT, TName, ArgsT...>(
             name, l, member_function);
+}
+
+template <typename TName, LuaMemberFunction... Fs>
+lua_CFunction lua_provide_overloaded(TName name, lua_State* l, Fs... functions) {
+    return details::_lua_provide_overloaded_member_function(name, l, functions...);
 }
 
 class luacpp_access_error : public std::runtime_error {

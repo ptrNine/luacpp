@@ -7,16 +7,28 @@
 
 #include <vector>
 
+template <>
+struct luacpp_usertype_method_loader<vec_sample> {
+    void operator()(luactx& l) const {
+        l.provide(LUA_TNAME("__tostring"), &vec_sample::tostring);
+        l.provide_member<vec_sample>(LUA_TNAME("new"), [](float x, float y, float z) { return vec_sample(x, y, z); });
+        l.provide(LUA_TNAME("test"),
+                  (void(vec_sample::*)(int)) & vec_sample::test,
+                  (void(vec_sample::*)(std::string)) & vec_sample::test);
+    }
+};
+
 int main() {
     auto l = luactx("hellolua.lua");
 
-    l.provide_overloaded(
+    l.provide(
         LUA_TNAME("test"),
         []() { std::cout << "NOARG" << std::endl; },
         [](float number, std::string str) { std::cout << number << " " << str << std::endl; },
         [](std::string str, float number) { std::cout << str << " " << number << std::endl; },
         [](std::string str, std::string str2) { std::cout << str << " " << str2 << std::endl; },
-        [](float number, int number2) { std::cout << number << " " << number2 << std::endl; }
+        [](float number, int number2) { std::cout << number << " " << number2 << std::endl; },
+        [](vec_sample vec) { std::cout << vec.x << " " << vec.y << " " << vec.z << std::endl; }
         );
 
     l.extract<void()>(LUA_TNAME("main"))();
