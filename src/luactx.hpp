@@ -98,6 +98,11 @@ public:
         return lua_provide(NameT{}, l, std::forward<T>(value));
     }
 
+    template <typename NameT, typename... Ts>
+    auto provide_overloaded(NameT, Ts&&... functions) {
+        return lua_provide(NameT{}, l, std::forward<Ts>(functions)...);
+    }
+
     template <typename UserType, typename NameT, typename T>
     decltype(auto) provide_member(NameT, T&& value) {
         return lua_provide(
