@@ -649,8 +649,6 @@ int lua_overloaded_dispatch_by_arg_types(lua_State* l, F&& function, Fs&&... fun
 
     constexpr size_t max_args_count = lua_function_traits<F>::arity;
 
-    std::cout << __PRETTY_FUNCTION__ << std::endl;
-    std::cout << "SAME_ARG_TYPE: " << std::boolalpha << same_arg_type << std::endl;
     if constexpr (sizeof...(Fs) > 0 && same_arg_type) {
         if constexpr (arg_number + 1 < max_args_count) {
             return lua_overloaded_dispatch_by_arg_types<arg_number + 1, enable_call>(
@@ -662,26 +660,19 @@ int lua_overloaded_dispatch_by_arg_types(lua_State* l, F&& function, Fs&&... fun
         }
     }
     else {
-        std::cout << "CHECK TYPE" << std::endl;
         if (luacpp_check<arg_type>(l, int(arg_number + 1))) {
-            std::cout << "CHECK OK" << std::endl;
-
             if constexpr (arg_number + 1 < max_args_count) {
                 int rc = lua_overloaded_dispatch_by_arg_types<arg_number + 1, false>(
                     l, std::forward<F>(function), std::forward<Fs>(functions)...);
                 if (rc != -1)
                     return rc;
             }
-            std::cout << "CALLLLLLLLLLLLLLLLL" << std::endl;
             return _luacpp_function_call_typelist<typename lua_function_traits<F>::return_t>(
                 l, std::forward<F>(function), typename lua_function_traits<F>::arg_types{});
-        } else {
-            std::cout << "CHECK FAIL" << std::endl;
         }
 
         /* Take next function if it exists */
         if constexpr (sizeof...(functions) > 0) {
-            std::cout << "TAKE NEXT FUNCTION" << std::endl;
             return lua_overloaded_dispatch_by_arg_types<arg_number, enable_call>(
                 l, std::forward<Fs>(functions)...);
         }
@@ -692,39 +683,35 @@ int lua_overloaded_dispatch_by_arg_types(lua_State* l, F&& function, Fs&&... fun
 }
 
 template <size_t CurrentArity = 0, size_t MaxArity, typename A, typename... Fs>
-void lua_args_count_recursive_dispatch(size_t args_count, A&& acceptor, Fs&&... functions) {
+int lua_args_count_recursive_dispatch(size_t args_count, A&& acceptor, Fs&&... functions) {
     if (args_count == CurrentArity) {
-        acceptor((lua_arity_fold<Fs, CurrentArity>(std::forward<Fs>(functions)) + ... + lua_fold_element<>{})
+        return acceptor((lua_arity_fold<Fs, CurrentArity>(std::forward<Fs>(functions)) + ... + lua_fold_element<>{})
                      .functions);
     }
     else {
         if constexpr (CurrentArity + 1 <= MaxArity)
-            lua_args_count_recursive_dispatch<CurrentArity + 1, MaxArity, A, Fs...>(
+            return lua_args_count_recursive_dispatch<CurrentArity + 1, MaxArity, A, Fs...>(
                 args_count, std::forward<A>(acceptor), std::forward<Fs>(functions)...);
     }
+    return -1;
 }
 
 template <typename... Fs>
 int lua_overloaded_call_dispatch(int args_count, lua_State* l, Fs&&... functions) {
-    std::cout << "PRETTY_FUNCTION: " << __PRETTY_FUNCTION__ << std::endl;
-
     /* For the first try dispatch by arguments count.
      * Do this if arity differs only.
      */
     if constexpr (!details::lua_same_arity<details::lua_function_traits<Fs>::arity...>) {
-        int args_count = lua_gettop(l);
-        details::lua_args_count_recursive_dispatch<0, details::lua_max_arity<Fs...>()>(
+        return details::lua_args_count_recursive_dispatch<0, details::lua_max_arity<Fs...>()>(
             args_count,
             [args_count, l]<typename... Fs2>(std::tuple<Fs2...> func_tuple) {
                 /* Call itself with functions with matched arity only */
                 if constexpr (sizeof...(Fs2) != 0)
-                    std::apply(lua_overloaded_call_dispatch<Fs2...>,
+                    return std::apply(lua_overloaded_call_dispatch<Fs2...>,
                                std::tuple_cat(std::tuple{args_count, l}, std::move(func_tuple)));
+                return -1;
             },
             std::forward<Fs>(functions)...);
-
-        return -1;
-        // luacpp_wrap_overloaded_functions<UniqId>()
     }
     /* Second - dispatch by argument types */
     else {
@@ -738,10 +725,15 @@ int lua_overloaded_call_dispatch(int args_count, lua_State* l, Fs&&... functions
 template <typename... Fs>
 int lua_overloaded_call_dispatch_entry(lua_State* l, Fs&&... functions) {
     int args_count = lua_gettop(l);
-    if (((size_t(args_count) == details::lua_function_traits<Fs>::arity) || ... || false))
-        return lua_overloaded_call_dispatch(args_count, l, std::forward<Fs>(functions)...);
+    if (((size_t(args_count) == details::lua_function_traits<Fs>::arity) || ... || false)) {
+        int rc = lua_overloaded_call_dispatch(args_count, l, std::forward<Fs>(functions)...);
+        if (rc == -1)
+            throw luacpp_call_cpp_error("no matched overloaded function");
+        return rc;
+    }
     else
-        return -1;
+        throw luacpp_call_cpp_error("no matched overloaded function (cannot call with " + std::to_string(args_count) +
+                                    " arguments)");
 }
 }
 
