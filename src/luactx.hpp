@@ -1,6 +1,8 @@
 #pragma once
 
 #include "luawrap.hpp"
+#include "lua_member_table.hpp"
+#include <map>
 
 class luactx_newstate_failed : public std::runtime_error {
 public:
@@ -31,8 +33,6 @@ public:
 struct lua_code {
     std::string code;
 };
-
-#include <iostream>
 
 class luactx {
 public:
@@ -79,6 +79,7 @@ public:
     }
 
     ~luactx() {
+        //lua_gc(l, LUA_GCCOLLECT, 0);
         lua_close(l);
     }
 
@@ -110,6 +111,44 @@ public:
             luacpp_type_registry::get_typespec<UserType>().lua_name().dot(NameT{}), l, std::forward<T>(value));
     }
 
+    template <typename UserType, typename NameT, typename F1, typename F2, typename... Fs>
+    auto provide_member(NameT, F1&& function1, F2&& function2, Fs&&... functions) {
+        return lua_provide_overloaded(luacpp_type_registry::get_typespec<UserType>().lua_name().dot(NameT{}),
+                                      l,
+                                      std::forward<F1>(function1),
+                                      std::forward<F2>(function2),
+                                      std::forward<Fs>(functions)...);
+    }
+
+    template <typename UserType>
+    void set_member_table(std::map<std::string, luacpp_getset<UserType>> table) {
+        provide_member<UserType>(LUA_TNAME("__index"), [this, table](const UserType& data, const std::string& field) {
+            auto found_field = table.find(field);
+            if (found_field != table.end())
+                found_field->second.get(data, *this);
+            else
+                luaL_getmetafield(ctx(), -2, field.data());
+            return luacpp_placeholder{};
+        });
+
+        provide_member<UserType>(
+            LUA_TNAME("__newindex"),
+            [this, table = std::move(table)](UserType& data, const std::string& field, luacpp_placeholder) {
+                auto found_field = table.find(field);
+                if (found_field != table.end()) {
+                    if (!found_field->second.set)
+                        throw luacpp_access_error(std::string("the field '") + field + "' of object type " +
+                                                  luacpp_type_registry::get_typespec<UserType>().lua_name().data() +
+                                                  " is private");
+                    found_field->second.set(data, *this);
+                }
+                else
+                    throw luacpp_access_error(std::string("object of type '") +
+                                              luacpp_type_registry::get_typespec<UserType>().lua_name().data() +
+                                              "' has no '" + field + "' field");
+            });
+    }
+
     template <typename T, typename NameT>
     decltype(auto) extract(NameT) {
         return luacpp_extract<T>(NameT{}, l);
@@ -121,7 +160,7 @@ public:
     }
 
     template <typename T>
-    T get(int stack_idx) {
+    decltype(auto) get(int stack_idx) {
         return luacpp_get<T>(l, stack_idx);
     }
 
@@ -130,6 +169,16 @@ public:
         auto res = luacpp_get<T>(l, -1);
         lua_pop(l, 1);
         return res;
+    }
+
+    template <typename T>
+    decltype(auto) get_new() {
+        return get<T>(3);
+    }
+
+    template <typename T>
+    void get_new(T& value) {
+        value = get<T>(3);
     }
 
     template <typename T>
@@ -145,33 +194,26 @@ private:
     void register_usertypes() {
         luacpp_tforeach<luacpp_typespec_list>([this](auto typespec) {
             using type = decltype(typespec.type());
-            provide(typespec.lua_name().dot(LUA_TNAME("_gc")), [](type* userdata) { userdata->~type(); });
+            provide_member<type>(LUA_TNAME("__gc"), [](type* userdata) { userdata->~type(); });
+
+            lua_getglobal(l, typespec.lua_name().data());
+            lua_pushvalue(l, -1);
+            lua_setfield(l, -2, "__index");
+            lua_pop(l, 1);
+
+            if (generate_dummy_file_for_autocompletion) {
+                autocompletion_file.append(typespec.lua_name().data());
+                autocompletion_file.append(" = {}\n");
+            }
+
             if constexpr (requires { luacpp_usertype_method_loader<type>(); })
                 luacpp_usertype_method_loader<type>()(*this);
         });
-        /*
-        using usertype_tuple = typename luacpp_usertype_list<0>::type;
-
-        static constexpr auto regtype = [](auto usertype, auto it) {
-            constexpr auto memclass = usertype.memclass();
-            if constexpr (memclass == luacpp_memclass::box) {
-                using T = decltype(usertype.type());
-                it->provide(usertype.lua_name().dot(LUA_TNAME("__gc")),
-                            [](luacpp_boxedtype_rawpointer<T> raw_p) {
-                                std::cout << "Deleted pointer: " << (void*)raw_p.ptr << std::endl;
-                                delete raw_p.ptr;
-                            });
-            }
-        };
-
-        static constexpr auto regall = []<size_t... Idxs>(auto it, std::index_sequence<Idxs...>) {
-            (regtype(std::tuple_element_t<Idxs, usertype_tuple>(), it), ...);
-        };
-
-        regall(this, std::make_index_sequence<std::tuple_size_v<usertype_tuple>>());
-        */
     }
 
 private:
-    lua_State* l;
+    lua_State*  l;
+
+    std::string autocompletion_file;
+    bool        generate_dummy_file_for_autocompletion = false;
 };

@@ -179,7 +179,9 @@ constexpr void luacpp_tforeach(auto&& f) {
 struct vec_sample {
     float x, y, z;
 
-    vec_sample(float ix, float iy, float iz): x(ix), y(iy), z(iz) {}
+    vec_sample(float ix, float iy, float iz): x(ix), y(iy), z(iz) {
+        std::cout << "New CTOR" << std::endl;
+    }
 
     vec_sample(const vec_sample& v): x(v.x), y(v.y), z(v.z) {
         std::cout << "Copy CTOR" << std::endl;
@@ -205,8 +207,8 @@ struct vec_sample {
         return *this;
     }
 
-    void test(int) {
-        std::cout << __PRETTY_FUNCTION__ << std::endl;
+    void test(int i) {
+        std::cout << "int f: arg = " << i << " vec: " << tostring() << std::endl;
     }
     void test(std::string) {
         std::cout << __PRETTY_FUNCTION__ << std::endl;

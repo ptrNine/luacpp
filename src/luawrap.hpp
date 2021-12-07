@@ -1,10 +1,10 @@
 #pragma once
 
-#include <concepts>
 #include <stdexcept>
 #include <string>
 #include <tuple>
 #include <type_traits>
+#include <optional>
 
 #include <luajit-2.1/lua.hpp>
 
@@ -86,6 +86,10 @@ inline void luacpp_push(lua_State* l, const char* value) {
         lua_pushstring(l, value);
 }
 
+struct luacpp_placeholder {};
+
+inline void luacpp_push(lua_State*, luacpp_placeholder) {}
+
 inline void luacpp_push(lua_State* l, std::nullptr_t) {
     lua_pushnil(l);
 }
@@ -126,15 +130,13 @@ void luacpp_push(lua_State* l, const LuaTupleLike auto& value) {
 }
 
 template <LuaRegisteredType T>
-T& luacpp_push(lua_State* l, const T& value) {
+std::decay_t<T>& luacpp_push(lua_State* l, T&& value) {
     void*    p          = lua_newuserdata(l, sizeof(uint64_t) + sizeof(value));
-    uint64_t type_index = luacpp_type_registry::get_index<T>();
+    uint64_t type_index = luacpp_type_registry::get_index<std::decay_t<T>>();
     std::memcpy(p, &type_index, sizeof(type_index));
-    void* data = reinterpret_cast<char*>(p) + sizeof(uint64_t); // NOLINT
-    auto  ptr  = new (data) T(value);                           // NOLINT
-    lua_getglobal(l, luacpp_type_registry::get_typespec<T>().lua_name().data());
-    lua_pushvalue(l, -1);
-    lua_setfield(l, -2, "__index");
+    void* data = reinterpret_cast<char*>(p) + sizeof(uint64_t);      // NOLINT
+    auto  ptr  = new (data) std::decay_t<T>(std::forward<T>(value)); // NOLINT
+    lua_getglobal(l, luacpp_type_registry::get_typespec<std::decay_t<T>>().lua_name().data());
     lua_setmetatable(l, -2);
 
     return *ptr;
@@ -176,6 +178,18 @@ requires std::is_pointer_v<T> T luacpp_get(lua_State* l, int idx) {
     }
 }
 */
+
+template <typename T>
+    requires std::same_as<std::decay_t<T>, luacpp_placeholder>
+auto luacpp_get(lua_State*, int) {
+    return luacpp_placeholder{};
+}
+
+template <typename T>
+    requires std::same_as<std::decay_t<T>, luacpp_placeholder>
+bool luacpp_check(lua_State*, int) {
+    return true;
+}
 
 template <typename T>
     requires std::same_as<std::decay_t<T>, bool>
@@ -442,11 +456,11 @@ struct luacpp_func_storage {
     }
 
     int call(lua_State* state) const {
-        return f(state, rf);
+        return f(state, *rf);
     }
 
     F f;
-    RF rf;
+    std::optional<RF> rf;
 };
 
 template <typename F, uint64_t UniqId, typename... RFs>
@@ -503,12 +517,10 @@ int _luacpp_function_call(lua_State* l, auto&& function) {
         return 0;
     }
     else {
-        auto result = []<size_t... Idxs>(lua_State * l, auto&& function, std::index_sequence<Idxs...>) {
-            return function(luacpp_get<ArgsT>(l, int(Idxs + 1))...);
-        }
-        (l, function, std::make_index_sequence<sizeof...(ArgsT)>());
-
-        luacpp_push(l, result);
+        luacpp_push(
+            l, []<size_t... Idxs>(lua_State * l, auto&& function, std::index_sequence<Idxs...>) {
+                return function(luacpp_get<ArgsT>(l, int(Idxs + 1))...);
+            }(l, function, std::make_index_sequence<sizeof...(ArgsT)>()));
         return 1;
     }
 }
@@ -529,7 +541,7 @@ lua_CFunction _luacpp_wrap_function(luacpp_native_function<F, ReturnT, ArgsT...>
 
     auto& func_storage = luacpp_func_storage<decltype(func), decltype(function.function), UniqId>::instance();
     func_storage.f = std::move(func);
-    func_storage.rf = std::move(function.function);
+    func_storage.rf.emplace(std::move(function.function));
 
     return &luacpp_wrapped_function<decltype(func), decltype(function.function), UniqId>{}.call;
 }
@@ -728,7 +740,7 @@ int lua_args_count_recursive_dispatch(size_t args_count, A&& acceptor, Fs&&... f
 }
 
 template <typename... Fs>
-int lua_overloaded_call_dispatch(int args_count, lua_State* l, Fs&&... functions) {
+int lua_overloaded_call_dispatch(size_t args_count, lua_State* l, Fs&&... functions) {
     /* For the first try dispatch by arguments count.
      * Do this if arity differs only.
      */
@@ -755,7 +767,7 @@ int lua_overloaded_call_dispatch(int args_count, lua_State* l, Fs&&... functions
 
 template <typename... Fs>
 int lua_overloaded_call_dispatch_entry(lua_State* l, Fs&&... functions) {
-    int args_count = lua_gettop(l);
+    auto args_count = size_t(lua_gettop(l));
     if (((size_t(args_count) == details::lua_function_traits<Fs>::arity) || ... || false)) {
         int rc = lua_overloaded_call_dispatch(args_count, l, std::forward<Fs>(functions)...);
         if (rc == -1)
