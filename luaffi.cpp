@@ -11,11 +11,7 @@ template <>
 struct luacpp_usertype_method_loader<vec_sample> {
     void operator()(luactx& l) const {
         l.provide(LUA_TNAME("__tostring"), &vec_sample::tostring);
-        l.set_member_table<vec_sample>({
-            LUA_GETSET(vec_sample, "x", x),
-            LUA_GETSET(vec_sample, "y", y),
-            LUA_GETSET(vec_sample, "z", z),
-        });
+        l.set_member_table<vec_sample>({lua_getsetez(x), lua_getsetez(y), lua_getsetez(z)});
 
         l.provide_member<vec_sample>(
             LUA_TNAME("new"),

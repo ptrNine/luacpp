@@ -3,6 +3,24 @@
 #include <map>
 #include "luawrap.hpp"
 
+#define lua_getsetez(lua_or_cpp_name)                                                                                  \
+    {                                                                                                                  \
+        #lua_or_cpp_name, {                                                                                            \
+            [](auto v, auto ctx) { ctx.push(v.lua_or_cpp_name); }, [](auto v, auto ctx) {                              \
+                ctx.get_new(v.lua_or_cpp_name);                                                                        \
+            }                                                                                                          \
+        }                                                                                                              \
+    }
+
+#define lua_getez(lua_or_cpp_name)                                                                                     \
+    {                                                                                                                  \
+        #lua_or_cpp_name, {                                                                                            \
+            [](auto v, auto ctx) {                                                                                     \
+                ctx.push(v.lua_or_cpp_name);                                                                           \
+            }                                                                                                          \
+        }                                                                                                              \
+    }
+
 #define LUA_GETSET(usertype, lua_name, cpp_name)                                                                       \
     std::pair<std::string, luacpp_getset<usertype>> {                                                                  \
         lua_name, {                                                                                                    \

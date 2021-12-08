@@ -121,7 +121,7 @@ public:
     }
 
     template <typename UserType>
-    void set_member_table(std::map<std::string, luacpp_getset<UserType>> table) {
+    void set_member_table(luacpp_member_table<UserType> table) {
         provide_member<UserType>(LUA_TNAME("__index"), [this, table](const UserType& data, const std::string& field) {
             auto found_field = table.find(field);
             if (found_field != table.end())
