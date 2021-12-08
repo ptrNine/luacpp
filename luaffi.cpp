@@ -4,6 +4,7 @@
 
 
 #include "src/luactx.hpp"
+#include "src/lua_assist_gen.hpp"
 
 #include <vector>
 
@@ -25,6 +26,17 @@ struct luacpp_usertype_method_loader<vec_sample> {
 
 int main() {
     auto l = luactx("hellolua.lua");
+
+
+    luacpp_assist_gen assist;
+
+    assist.field("vec_sample", true);
+    assist.field("vec_sample.x");
+    assist.field("vec_sample.y");
+    assist.field("vec_sample.z");
+    assist.function("vec_sample.new", {"x", "y", "z"}, "vec_sample");
+
+    std::cout << "ASSIST: \n\n" << assist.generate() << std::endl;
 
     /*
     l.provide(

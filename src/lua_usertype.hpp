@@ -1,6 +1,7 @@
 #pragma once
 
 #include <tuple>
+#include <string>
 #include <cstdint>
 
 template <char C>
@@ -103,6 +104,14 @@ struct lua_tname {
     template <char... Cs2>
     constexpr auto dot(lua_tname<Cs2...>) const {
         return lua_tname<Cs..., '.', Cs2...>{};
+    }
+
+    operator std::string() const {
+        return {data(), size()};
+    }
+
+    operator std::string_view() const {
+        return {data(), size()};
     }
 };
 
