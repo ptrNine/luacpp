@@ -110,8 +110,17 @@ struct lua_tname {
         return {data(), size()};
     }
 
-    operator std::string_view() const {
+    constexpr operator std::string_view() const {
         return {data(), size()};
+    }
+
+    template <char... Cs2>
+    constexpr bool operator==(const lua_tname<Cs2...>&&) const {
+        return std::is_same_v<lua_tname, lua_tname<Cs2...>>;
+    }
+    template <char... Cs2>
+    constexpr bool operator!=(const lua_tname<Cs2...>&&) const {
+        return !std::is_same_v<lua_tname, lua_tname<Cs2...>>;
     }
 };
 

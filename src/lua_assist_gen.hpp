@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 #include <map>
+#include <queue>
 
 struct luacpp_assist_function {
     luacpp_assist_function(size_t args_count) {
@@ -31,7 +32,8 @@ enum class luacpp_assist_type {
 
 struct luacpp_assist_some {
     void push_function(std::string name, std::vector<std::string> args, std::optional<std::string> metatable_result) {
-        auto& func            = children.insert_or_assign(name, luacpp_assist_some{}).first->second;
+        auto& func =
+            children.insert_or_assign(name + " " + std::to_string(args.size()), luacpp_assist_some{}).first->second;
         func.type             = luacpp_assist_type::function;
         func.name             = std::move(name);
         func.args             = std::move(args);
@@ -50,13 +52,16 @@ struct luacpp_assist_some {
     void push_member_function(std::string                class_name,
                               std::string                name,
                               std::vector<std::string>   args,
-                              std::optional<std::string> metatable_result) {
-        auto& func            = children.insert_or_assign(name, luacpp_assist_some{}).first->second;
+                              std::optional<std::string> metatable_result,
+                              bool                       captured_self) {
+        auto& func =
+            children.insert_or_assign(name + " " + std::to_string(args.size()), luacpp_assist_some{}).first->second;
         func.type             = luacpp_assist_type::member_function;
         func.name             = std::move(name);
         func.args             = std::move(args);
         func.class_name       = std::move(class_name);
         func.metatable_result = std::move(metatable_result);
+        func.captured_self    = captured_self;
     }
 
     static void put_indent(std::string& out, size_t count) {
@@ -67,7 +72,11 @@ struct luacpp_assist_some {
     void traverse(std::string& out, size_t indent = 0) const {
         if (name.empty()) {
             for (auto& [_, child] : children)
-                child.traverse(out, indent);
+                if (child.type == luacpp_assist_type::field)
+                    child.traverse(out, indent);
+            for (auto& [_, child] : children)
+                if (child.type != luacpp_assist_type::field)
+                    child.traverse(out, indent);
             return;
         }
 
@@ -78,9 +87,12 @@ struct luacpp_assist_some {
             out += " = {";
             if (!children.empty()) {
                 out += '\n';
-                for (auto& [_, child] : children) {
-                    child.traverse(out, indent + 4);
-                }
+                for (auto& [_, child] : children)
+                    if (child.type == luacpp_assist_type::field)
+                        child.traverse(out, indent + 4);
+                for (auto& [_, child] : children)
+                    if (child.type != luacpp_assist_type::field)
+                        child.traverse(out, indent + 4);
             }
             if (metatable) {
                 out += '\n';
@@ -104,7 +116,8 @@ struct luacpp_assist_some {
             if (metatable_result) {
                 out += '\n';
                 put_indent(out, indent + 4);
-                out += "result = {}\n";
+                out += "local result = { __index = ";
+                out += *metatable_result + " }\n";
                 put_indent(out, indent + 4);
                 out += "return setmetatable(result, ";
                 out += *metatable_result;
@@ -118,7 +131,7 @@ struct luacpp_assist_some {
         case luacpp_assist_type::member_function:
             out += "function ";
             out += class_name;
-            out += ':';
+            out += captured_self ? ':' : '.';
             out += name;
             out += '(';
             if (!args.empty())
@@ -131,7 +144,8 @@ struct luacpp_assist_some {
             if (metatable_result) {
                 out += '\n';
                 put_indent(out, indent + 4);
-                out += "result = {}\n";
+                out += "local result = { __index = ";
+                out += *metatable_result + " }\n";
                 put_indent(out, indent + 4);
                 out += "return setmetatable(result, ";
                 out += *metatable_result;
@@ -152,7 +166,8 @@ struct luacpp_assist_some {
     luacpp_assist_type                        type;
     std::map<std::string, luacpp_assist_some> children;
     std::vector<std::string>                  args;
-    bool                                      metatable = false;
+    bool                                      metatable     = false;
+    bool                                      captured_self = true;
     std::optional<std::string>                metatable_result;
 };
 
@@ -174,25 +189,53 @@ public:
     }
 
     void
-    function(std::string_view name, std::vector<std::string> args, std::optional<std::string> metatable_result = {}) {
+    function(std::string_view name, size_t args_count, std::optional<std::string> metatable_result = {}) {
         auto [obj, last_name] = field<false>(name);
-        obj->push_function(std::string(last_name), std::move(args), std::move(metatable_result));
+        obj->push_function(std::string(last_name), generate_argnames(args_count), std::move(metatable_result));
     }
 
     void member_function(std::string_view           class_name,
                          std::string_view           name,
-                         std::vector<std::string>   args,
-                         std::optional<std::string> metatable_result = {}) {
-        root.push_member_function(
-            std::string(class_name), std::string(name), std::move(args), std::move(metatable_result));
+                         size_t                     args_count,
+                         std::optional<std::string> metatable_result = {},
+                         bool                       captured_self    = true) {
+        root.push_member_function(std::string(class_name),
+                                  std::string(name),
+                                  generate_argnames(args_count),
+                                  std::move(metatable_result),
+                                  captured_self);
     }
 
-    std::string generate() {
+    std::string generate() const {
         std::string result;
         root.traverse(result);
         return result;
     }
 
+    std::vector<std::string> generate_argnames(size_t args_count) {
+        if (args_count > ('z' - 'a') + 1)
+            return {};
+
+        std::vector<std::string> result;
+        if (!current_argnames.empty()) {
+            auto sz = std::min(args_count, current_argnames.front().size());
+            for (size_t i = 0; i < sz; ++i)
+                result.push_back(current_argnames.front()[i]);
+            current_argnames.pop();
+        }
+
+        for (char argname = 'a'; argname < 'a' + char(args_count - result.size()); ++argname)
+            result.emplace_back(1, argname);
+
+        return result;
+    }
+
+    template <typename... Ts>
+    void annotate_args(Ts&&... argument_names) {
+        current_argnames.push(std::vector<std::string>{std::forward<Ts>(argument_names)...});
+    }
+
 private:
     luacpp_assist_some root;
+    std::queue<std::vector<std::string>> current_argnames;
 };

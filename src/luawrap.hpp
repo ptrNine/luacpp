@@ -637,6 +637,34 @@ struct lua_function_traits<ReturnT(ClassT::*)(ArgsT...) const> : lua_function_tr
 template <typename F> requires details::LuaFunctional<F>
 struct lua_function_traits<F> : lua_function_traits<decltype(&F::operator())> {};
 
+template <typename T>
+struct lua_member_function_traits;
+
+template <typename ReturnT, typename ClassT, typename... ArgsT>
+struct lua_member_function_traits<ReturnT(ClassT::*)(ArgsT...)> : lua_function_traits<ReturnT(*)(ArgsT...)> {
+    using class_t = ClassT;
+    static constexpr bool is_const    = false;
+    static constexpr bool is_noexcept = false;
+};
+template <typename ReturnT, typename ClassT, typename... ArgsT>
+struct lua_member_function_traits<ReturnT(ClassT::*)(ArgsT...) const> : lua_function_traits<ReturnT(*)(ArgsT...)> {
+    using class_t = ClassT;
+    static constexpr bool is_const    = true;
+    static constexpr bool is_noexcept = false;
+};
+template <typename ReturnT, typename ClassT, typename... ArgsT>
+struct lua_member_function_traits<ReturnT(ClassT::*)(ArgsT...) noexcept> : lua_function_traits<ReturnT(*)(ArgsT...)> {
+    using class_t = ClassT;
+    static constexpr bool is_const    = false;
+    static constexpr bool is_noexcept = true;
+};
+template <typename ReturnT, typename ClassT, typename... ArgsT>
+struct lua_member_function_traits<ReturnT(ClassT::*)(ArgsT...) const noexcept> : lua_function_traits<ReturnT(*)(ArgsT...)> {
+    using class_t = ClassT;
+    static constexpr bool is_const    = true;
+    static constexpr bool is_noexcept = true;
+};
+
 template <size_t>
 struct lua_nttp_tag {};
 

@@ -1,4 +1,5 @@
 #include <iostream>
+#include <fstream>
 
 #include "src/lua_usertype.hpp"
 
@@ -12,12 +13,17 @@ template <>
 struct luacpp_usertype_method_loader<vec_sample> {
     void operator()(luactx& l) const {
         l.provide(LUA_TNAME("__tostring"), &vec_sample::tostring);
+
         l.set_member_table<vec_sample>({lua_getsetez(x), lua_getsetez(y), lua_getsetez(z)});
 
+        l.annotate_args("x", "y", "z");
         l.provide_member<vec_sample>(
             LUA_TNAME("new"),
             [](float x, float y, float z) { return vec_sample(x, y, z); },
             [](const vec_sample& v) { return v; });
+
+        l.annotate_args("number");
+        l.annotate_args("string");
         l.provide(LUA_TNAME("test"),
                   (void(vec_sample::*)(int)) & vec_sample::test,
                   (void(vec_sample::*)(std::string)) & vec_sample::test);
@@ -25,18 +31,9 @@ struct luacpp_usertype_method_loader<vec_sample> {
 };
 
 int main() {
-    auto l = luactx("hellolua.lua");
+    auto l = luactx("hellolua.lua", true);
 
-
-    luacpp_assist_gen assist;
-
-    assist.field("vec_sample", true);
-    assist.field("vec_sample.x");
-    assist.field("vec_sample.y");
-    assist.field("vec_sample.z");
-    assist.function("vec_sample.new", {"x", "y", "z"}, "vec_sample");
-
-    std::cout << "ASSIST: \n\n" << assist.generate() << std::endl;
+    std::ofstream("init.lua") << l.generate_assist();
 
     /*
     l.provide(
