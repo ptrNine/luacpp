@@ -3,7 +3,11 @@ project(luaffi)
 
 set(CMAKE_CXX_STANDARD 20)
 
+option(ENABLE_TESTS "Enables tests" ON)
+
 include(CMake/git_submodule_build.cmake)
+set(CMAKE_PREFIX_PATH "${CMAKE_BINARY_DIR}/3rd")
+
 include_directories(SYSTEM "${CMAKE_BINARY_DIR}/3rd/include")
 link_directories("${CMAKE_BINARY_DIR}/3rd/lib")
 link_directories("${CMAKE_BINARY_DIR}/3rd/lib64")
@@ -35,6 +39,12 @@ endforeach()
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(luajit REQUIRED luajit)
 
+git_submodule_update()
+
 add_executable(luaffi luaffi.cpp)
 target_include_directories(luaffi PUBLIC ${luajit_INCLUDE_DIRS})
 target_link_libraries(luaffi ${luajit_LIBRARIES})
+
+if (ENABLE_TESTS)
+    add_subdirectory(tests)
+endif()
