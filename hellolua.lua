@@ -1,4 +1,7 @@
 function main()
+    x = true
+    assert(!x)
+
     local v1 = vec_sample.new(100, 200, 300)
     local v2 = vec_sample.new(10, 20, 30)
     print(v1, v2)

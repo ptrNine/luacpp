@@ -37,14 +37,17 @@ public:
 
         luaL_openlibs(l);
 
+        //lua_atpanic(l, &panic_wrapper);
+
         register_usertypes();
     }
 
-    luactx(const char* entry_file, bool generate_assist = false): luactx(generate_assist) {
-        auto guard = luacpp_exception_guard{[l = this->l] {
-            lua_close(l);
-        }};
+    //static int panic_wrapper(lua_State* l) {
+    //    std::cerr << lua_tostring(l, -1) << std::endl;
+    //    std::abort();
+    //}
 
+    luactx(const char* entry_file, bool generate_assist = false): luactx(generate_assist) {
         switch (luaL_loadfile(l, entry_file)) {
         case LUA_ERRSYNTAX:
             throw luactx_syntax_error(lua_tostring(l, -1));
@@ -54,20 +57,24 @@ public:
             throw luactx_cannot_open_file(entry_file);
         }
 
+        auto guard = luacpp_exception_guard{[this] {
+            lua_close(l);
+        }};
+
         lua_call(l, 0, 0);
     }
 
     luactx(const lua_code& code, bool generate_assist = false): luactx(generate_assist) {
-        auto guard = luacpp_exception_guard{[l = this->l] {
-            lua_close(l);
-        }};
-
         switch (luaL_loadstring(l, code.code.data())) {
         case LUA_ERRSYNTAX:
             throw luactx_syntax_error(lua_tostring(l, -1));
         case LUA_ERRMEM:
             throw luactx_memory_error();
         }
+
+        auto guard = luacpp_exception_guard{[this] {
+            lua_close(l);
+        }};
 
         luacpp_call(l, 0, 0);
     }

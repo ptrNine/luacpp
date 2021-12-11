@@ -354,8 +354,6 @@ auto luacpp_get(lua_State* l, int idx) {
     if (lua_objlen(l, idx) != std::tuple_size_v<T>)
         throw luacpp_cast_error(l, idx, "lua table and tuple lengths do not match", __PRETTY_FUNCTION__);
 
-    using value_t = std::decay_t<decltype(result[0])>;
-
     /* TODO: fix this */
 
     /* For using relative stack pos */
@@ -369,14 +367,14 @@ auto luacpp_get(lua_State* l, int idx) {
     static constexpr auto getall = []<size_t... Idxs>(T & v, [[maybe_unused]] lua_State * l, std::index_sequence<Idxs...>) {
         [[maybe_unused]] static constexpr auto op = []<size_t idx>(T& v, lua_State* l, luacppdetails::nttp_tag<idx>) {
             lua_next(l, -2);
-            std::get<idx>(v) = details::_luacpp_array_getnext<value_t>(l, int(idx + 1));
+            std::get<idx>(v) = details::_luacpp_array_getnext<std::tuple_element_t<idx, T>>(l, int(idx + 1));
             lua_pop(l, 1);
         };
         ((op(v, l, luacppdetails::nttp_tag<Idxs>{})), ...);
     };
 
     getall(result, l, std::make_index_sequence<std::tuple_size_v<T>>());
-    lua_pop(l, 1);
+    lua_pop(l, 2);
 
     return result;
 }
@@ -410,7 +408,7 @@ bool luacpp_check(lua_State* l, int idx) {
     };
 
     checkall(l, result, std::make_index_sequence<std::tuple_size_v<T>>());
-    lua_pop(l, 1);
+    lua_pop(l, 2);
 
 
     /* TODO: fix this */
