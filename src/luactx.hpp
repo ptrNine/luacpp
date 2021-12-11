@@ -25,11 +25,6 @@ public:
     luactx_memory_error(): std::runtime_error("lua memory error") {}
 };
 
-class luactx_panic : public std::runtime_error {
-public:
-    luactx_panic(const std::string& msg): std::runtime_error(msg) {}
-};
-
 struct lua_code {
     std::string code;
 };
@@ -40,7 +35,6 @@ public:
         if (!l)
             throw luactx_newstate_failed();
 
-        lua_atpanic(l, panic_wrapper);
         luaL_openlibs(l);
 
         register_usertypes();
@@ -63,7 +57,7 @@ public:
         lua_call(l, 0, 0);
     }
 
-    luactx(const lua_code& code, bool generate_assist): luactx(generate_assist) {
+    luactx(const lua_code& code, bool generate_assist = false): luactx(generate_assist) {
         auto guard = luacpp_exception_guard{[l = this->l] {
             lua_close(l);
         }};
@@ -75,18 +69,12 @@ public:
             throw luactx_memory_error();
         }
 
-        lua_call(l, 0, 0);
+        luacpp_call(l, 0, 0);
     }
 
     ~luactx() {
         //lua_gc(l, LUA_GCCOLLECT, 0);
         lua_close(l);
-    }
-
-    static int panic_wrapper(lua_State* l) {
-        auto msg = std::string(lua_tostring(l, -1));
-        lua_pop(l, 1);
-        throw luactx_panic(msg);
     }
 
     [[nodiscard]]

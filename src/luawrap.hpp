@@ -6,8 +6,7 @@
 #include <type_traits>
 #include <optional>
 
-#include <luajit-2.1/lua.hpp>
-
+#include "lua_lib.hpp"
 #include "lua_usertype_registry.hpp"
 #include "lua_utils.hpp"
 
@@ -24,7 +23,15 @@ template <typename T>
 concept LuaStringLikeOrRef = LuaStringLike<std::decay_t<T>>;
 
 template <typename T>
-concept LuaListLike = !LuaStringLike<T> && requires(const T& v) {
+concept LuaTupleLike = requires {
+    std::tuple_size<T>::value;
+};
+
+template <typename T>
+concept LuaTupleLikeOrRef = LuaTupleLike<std::decay_t<T>>;
+
+template <typename T>
+concept LuaListLike = !LuaTupleLike<T> && !LuaStringLike<T> && requires(const T& v) {
     {begin(v)};
     {end(v)};
 };
@@ -49,21 +56,13 @@ template <typename T>
 concept LuaPushBackableOrRef = LuaPushBackable<std::decay_t<T>>;
 
 template <typename T>
-concept LuaStaticSettable = !LuaStringLike<T> && !LuaPushBackable<T> && requires(T & v) {
+concept LuaStaticSettable = !LuaTupleLike<T> && !LuaStringLike<T> && !LuaPushBackable<T> && requires(T & v) {
     {v[0] = v[0]};
     { size(v) } -> std::convertible_to<size_t>;
 };
 
 template <typename T>
 concept LuaStaticSettableOrRef = LuaStaticSettable<std::decay_t<T>>;
-
-template <typename T>
-concept LuaTupleLike = requires {
-    std::tuple_size<T>::value;
-};
-
-template <typename T>
-concept LuaTupleLikeOrRef = LuaTupleLike<std::decay_t<T>>;
 
 template <typename T> requires std::same_as<T, bool>
 inline void luacpp_push(lua_State* l, T value) {
@@ -123,7 +122,7 @@ void luacpp_push(lua_State* l, const LuaListLike auto& value) {
 
 void luacpp_push(lua_State* l, const LuaTupleLike auto& value) {
     lua_createtable(l, int(std::tuple_size_v<std::decay_t<decltype(value)>>), 0);
-    []<size_t... Idxs>(lua_State * l, decltype(value) value, std::index_sequence<Idxs...>) {
+    []<size_t... Idxs>([[maybe_unused]] lua_State * l, decltype(value) value, std::index_sequence<Idxs...>) {
         ((lua_pushnumber(l, int(Idxs) + 1), luacpp_push(l, std::get<Idxs>(value)), lua_settable(l, -3)), ...);
     }
     (l, value, std::make_index_sequence<std::tuple_size_v<std::decay_t<decltype(value)>>>());
@@ -302,7 +301,7 @@ bool luacpp_check(lua_State* l, int idx) {
     bool result     = true;
     int index_check = 1;
     while (result && lua_next(l, -2)) {
-        if (details::_luacpp_array_check<value_t>(l, index_check))
+        if (!details::_luacpp_array_check<value_t>(l, index_check))
             result = false;
         ++index_check;
         lua_pop(l, 1);
@@ -342,6 +341,11 @@ auto luacpp_get(lua_State* l, int idx) {
     return result;
 }
 
+namespace luacppdetails {
+    template <size_t N>
+    struct nttp_tag {};
+}
+
 template <LuaTupleLikeOrRef T>
 auto luacpp_get(lua_State* l, int idx) {
     if (!lua_istable(l, idx))
@@ -362,13 +366,13 @@ auto luacpp_get(lua_State* l, int idx) {
         lua_pop(l, 3);
     }};
 
-    static constexpr auto getall = []<size_t... Idxs>(T & v, lua_State * l, std::index_sequence<Idxs...>) {
-        static constexpr auto op = []<size_t idx>(T& v, lua_State* l) {
+    static constexpr auto getall = []<size_t... Idxs>(T & v, [[maybe_unused]] lua_State * l, std::index_sequence<Idxs...>) {
+        [[maybe_unused]] static constexpr auto op = []<size_t idx>(T& v, lua_State* l, luacppdetails::nttp_tag<idx>) {
             lua_next(l, -2);
             std::get<idx>(v) = details::_luacpp_array_getnext<value_t>(l, int(idx + 1));
             lua_pop(l, 1);
         };
-        ((op<Idxs>(v, l)), ...);
+        ((op(v, l, luacppdetails::nttp_tag<Idxs>{})), ...);
     };
 
     getall(result, l, std::make_index_sequence<std::tuple_size_v<T>>());
@@ -392,9 +396,26 @@ bool luacpp_check(lua_State* l, int idx) {
         lua_pop(l, 3);
     }};
 
+    bool result = true;
+
+    static constexpr auto getall = []<size_t... Idxs>([[maybe_unused]] lua_State * l, bool& result, std::index_sequence<Idxs...>) {
+        [[maybe_unused]] static constexpr auto op = []<size_t idx>(lua_State* l, bool& result, luacppdetails::nttp_tag<idx>) {
+            lua_next(l, -2);
+            if (result)
+                if (!details::_luacpp_array_check<std::tuple_element_t<idx, T>>(l, int(idx + 1)))
+                    result = false;
+            lua_pop(l, 1);
+        };
+        ((op(l, result, luacppdetails::nttp_tag<Idxs>{})), ...);
+    };
+
+    checkall(l, result, std::make_index_sequence<std::tuple_size_v<T>>());
+    lua_pop(l, 1);
+
+
     /* TODO: fix this */
 
-    return false;
+    return result;
 }
 
 /* This is the only thing that can return references */
@@ -1050,10 +1071,10 @@ public:
         ((luacpp_push(l, args)), ...);
 
         if constexpr (IsVoid) {
-            lua_call(l, int(sizeof...(ArgsT)), 0);
+            luacpp_call(l, int(sizeof...(ArgsT)), 0);
         }
         else {
-            lua_call(l, int(sizeof...(ArgsT)), 1);
+            luacpp_call(l, int(sizeof...(ArgsT)), 1);
             ++stack_depth;
             return luacpp_get<ReturnT>(l, -1);
         }
