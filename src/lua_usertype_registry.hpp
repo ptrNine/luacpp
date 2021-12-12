@@ -12,21 +12,21 @@ struct luacpp_type_registry {
 
     template <typename T>
     static constexpr size_t get_index() {
-        return luacpp_tuniqfind<luacpp_typespec_list>(
+        return luacpp_tuniqfind<luacpp_typespec_list<0>>(
             [](auto&& usertype) { return std::is_same_v<decltype(usertype.type()), T>; });
     }
 
     template <typename T>
     static constexpr auto get_typespec() {
         constexpr auto idx = get_index<T>();
-        return details::telement<idx>(luacpp_typespec_list{});
+        return details::telement<idx>(luacpp_typespec_list<0>{});
     }
 
     static constexpr void typespec_dispatch(size_t type_index, auto&& function) {
         []<size_t... Idxs>(size_t type_index, auto&& function, std::index_sequence<Idxs...>) {
-            ((type_index == Idxs ? (function(details::telement<Idxs, luacpp_typespec_list>()), 0) : 0) + ...);
+            ((type_index == Idxs ? (function(details::telement<Idxs, luacpp_typespec_list<0>>()), 0) : 0) + ...);
         }
-        (type_index, function, std::make_index_sequence<std::tuple_size_v<luacpp_typespec_list>>());
+        (type_index, function, std::make_index_sequence<std::tuple_size_v<luacpp_typespec_list<0>>>());
     }
 };
 

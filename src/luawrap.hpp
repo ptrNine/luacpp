@@ -348,13 +348,13 @@ namespace luacppdetails {
 
 template <LuaTupleLikeOrRef T>
 auto luacpp_get(lua_State* l, int idx) {
+    using type = std::decay_t<T>;
+
     if (!lua_istable(l, idx))
         throw luacpp_cast_error(l, idx, "this type can't be casted to C++ tuple-like type", __PRETTY_FUNCTION__);
-    std::decay_t<T> result;
-    if (lua_objlen(l, idx) != std::tuple_size_v<T>)
+    type result;
+    if (lua_objlen(l, idx) != std::tuple_size_v<type>)
         throw luacpp_cast_error(l, idx, "lua table and tuple lengths do not match", __PRETTY_FUNCTION__);
-
-    /* TODO: fix this */
 
     /* For using relative stack pos */
     lua_pushvalue(l, idx);
@@ -364,16 +364,16 @@ auto luacpp_get(lua_State* l, int idx) {
         lua_pop(l, 3);
     }};
 
-    static constexpr auto getall = []<size_t... Idxs>(T & v, [[maybe_unused]] lua_State * l, std::index_sequence<Idxs...>) {
-        [[maybe_unused]] static constexpr auto op = []<size_t idx>(T& v, lua_State* l, luacppdetails::nttp_tag<idx>) {
+    static constexpr auto getall = []<size_t... Idxs>(type& v, [[maybe_unused]] lua_State * l, std::index_sequence<Idxs...>) {
+        [[maybe_unused]] static constexpr auto op = []<size_t idx>(type& v, lua_State* l, luacppdetails::nttp_tag<idx>) {
             lua_next(l, -2);
-            std::get<idx>(v) = details::_luacpp_array_getnext<std::tuple_element_t<idx, T>>(l, int(idx + 1));
+            std::get<idx>(v) = details::_luacpp_array_getnext<std::tuple_element_t<idx, type>>(l, int(idx + 1));
             lua_pop(l, 1);
         };
         ((op(v, l, luacppdetails::nttp_tag<Idxs>{})), ...);
     };
 
-    getall(result, l, std::make_index_sequence<std::tuple_size_v<T>>());
+    getall(result, l, std::make_index_sequence<std::tuple_size_v<type>>());
     lua_pop(l, 2);
 
     return result;
@@ -381,10 +381,12 @@ auto luacpp_get(lua_State* l, int idx) {
 
 template <LuaTupleLikeOrRef T>
 bool luacpp_check(lua_State* l, int idx) {
+    using type = std::decay_t<T>;
+
     if (!lua_istable(l, idx))
         return false;
 
-    if (lua_objlen(l, idx) != std::tuple_size_v<T>)
+    if (lua_objlen(l, idx) != std::tuple_size_v<type>)
         return false;
 
     lua_pushvalue(l, idx);
@@ -400,18 +402,15 @@ bool luacpp_check(lua_State* l, int idx) {
         [[maybe_unused]] static constexpr auto op = []<size_t idx>(lua_State* l, bool& result, luacppdetails::nttp_tag<idx>) {
             lua_next(l, -2);
             if (result)
-                if (!details::_luacpp_array_check<std::tuple_element_t<idx, T>>(l, int(idx + 1)))
+                if (!details::_luacpp_array_check<std::tuple_element_t<idx, type>>(l, int(idx + 1)))
                     result = false;
             lua_pop(l, 1);
         };
         ((op(l, result, luacppdetails::nttp_tag<Idxs>{})), ...);
     };
 
-    checkall(l, result, std::make_index_sequence<std::tuple_size_v<T>>());
+    checkall(l, result, std::make_index_sequence<std::tuple_size_v<type>>());
     lua_pop(l, 2);
-
-
-    /* TODO: fix this */
 
     return result;
 }

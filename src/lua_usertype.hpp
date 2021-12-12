@@ -178,7 +178,7 @@ constexpr auto telement(std::tuple<ArgsT...>) {
 template <typename T>
 constexpr size_t luacpp_tuniqfind(auto&& f) {
     return []<size_t... Idxs>(auto&& f, std::index_sequence<Idxs...>) {
-        return ((f(details::telement<Idxs>(T{})) ? Idxs + 1U : 0U) + ... + 0U) - 1U;
+        return ((f(details::telement<Idxs>(T{})) ? Idxs + size_t(1) : size_t(0)) + ... + size_t(0)) - size_t(1);
     }
     (f, std::make_index_sequence<std::tuple_size_v<T>>());
 }
@@ -241,9 +241,20 @@ struct vec_sample {
     }
 };
 
-using luacpp_typespec_list = std::tuple<luacpp_typespec<std::string_view, LUA_TNAME("strview")>,
-                                        luacpp_typespec<std::u16string_view, LUA_TNAME("strview2")>,
-                                        luacpp_typespec<vec_sample, LUA_TNAME("vec_sample")>>;
+
+template <size_t>
+struct luacpp_typespec_list_s;
+
+template <size_t tag>
+constexpr auto luacpp_typespec_list_get_type() {
+    if constexpr (requires { typename luacpp_typespec_list_s<tag>::type; })
+        return typename luacpp_typespec_list_s<tag>::type{};
+    else
+        return std::tuple<>{};
+}
+
+template <size_t tag>
+using luacpp_typespec_list = decltype(luacpp_typespec_list_get_type<tag>());
 
 template <typename T>
 struct luacpp_usertype_method_loader;

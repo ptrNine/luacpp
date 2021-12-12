@@ -9,6 +9,7 @@
 
 #include <vector>
 
+/*
 template <>
 struct luacpp_usertype_method_loader<vec_sample> {
     void operator()(luactx& l) const {
@@ -29,11 +30,18 @@ struct luacpp_usertype_method_loader<vec_sample> {
                   (void(vec_sample::*)(std::string)) & vec_sample::test);
     }
 };
+*/
 
 int main() {
-    auto l = luactx("hellolua.lua", true);
+    auto l = luactx(lua_code{"function call0() cppfunc() end function call2() cppfunc(1, 2) end"});
+    l.provide(LUA_TNAME("cppfunc"), [](int) {});
+    l.extract<void()>(LUA_TNAME("call0"))();
+    l.extract<void()>(LUA_TNAME("call2"))();
 
-    std::ofstream("init.lua") << l.generate_assist();
+
+    //auto l = luactx("hellolua.lua", true);
+
+    //std::ofstream("init.lua") << l.generate_assist();
 
     /*
     l.provide(
@@ -47,7 +55,7 @@ int main() {
         );
         */
 
-    l.extract<void()>(LUA_TNAME("main"))();
+    //l.extract<void()>(LUA_TNAME("main"))();
 }
 
 

@@ -29,6 +29,9 @@ using namespace Catch::literals;
     "    for i = 1, #v do\n"                                                                                           \
     "        assert(c[i] == v[i])\n"                                                                                   \
     "    end\n"                                                                                                        \
+    "end\n"                                                                                                            \
+    "function call_cpp()\n"                                                                                            \
+    "    cppfunc(" CHECK_VALUE ")\n"                                                                                   \
     "end\n"
 
 template <typename T>
@@ -42,6 +45,11 @@ void number_test() {
 
     l.provide(LUA_TNAME("glob"), T(200));
     REQUIRE(l.extract<T()>(LUA_TNAME("test_glob"))() == T(200));
+
+    l.provide(LUA_TNAME("cppfunc"), [](T number) {
+        REQUIRE(number == 100);
+    });
+    l.extract<void()>(LUA_TNAME("call_cpp"))();
 
     REQUIRE(top == l.top());
 }
@@ -80,6 +88,12 @@ TEST_CASE("basic_types") {
 
         l.provide(LUA_TNAME("glob"), 222.222f);
         REQUIRE(l.extract<float()>(LUA_TNAME("test_glob"))() == 222.222_a);
+
+        l.provide(LUA_TNAME("cppfunc"), [](float number) {
+            REQUIRE(number == 100_a);
+        });
+        l.extract<void()>(LUA_TNAME("call_cpp"))();
+
         REQUIRE(top == l.top());
     }
     SECTION("double") {
@@ -91,19 +105,31 @@ TEST_CASE("basic_types") {
 
         l.provide(LUA_TNAME("glob"), 222.222);
         REQUIRE(l.extract<double()>(LUA_TNAME("test_glob"))() == 222.222_a);
+
+        l.provide(LUA_TNAME("cppfunc"), [](double number) {
+            REQUIRE(number == 100.101_a);
+        });
+        l.extract<void()>(LUA_TNAME("call_cpp"))();
+
         REQUIRE(top == l.top());
     }
 
     SECTION("bool") {
         auto l = luactx(
             lua_code{"function check_true(v) assert(v) end function check_false(v) assert(v == false) end function "
-                     "test(v) return v end"});
+                     "test(v) return v end function call_cpp() cppfunc(true) end"});
 
         auto top = l.top();
         l.extract<void(bool)>(LUA_TNAME("check_true"))(true);
         l.extract<void(bool)>(LUA_TNAME("check_false"))(false);
         REQUIRE(l.extract<bool(bool)>(LUA_TNAME("test"))(true));
         REQUIRE(!l.extract<bool(bool)>(LUA_TNAME("test"))(false));
+
+        l.provide(LUA_TNAME("cppfunc"), [](bool v) {
+            REQUIRE(v);
+        });
+        l.extract<void()>(LUA_TNAME("call_cpp"))();
+
         REQUIRE(top == l.top());
     }
 
@@ -127,6 +153,12 @@ TEST_CASE("basic_types") {
 
         l.provide(LUA_TNAME("glob"), std::string_view("teststring2"));
         REQUIRE(l.extract<std::string()>(LUA_TNAME("test_glob"))() == "teststring2");
+
+        l.provide(LUA_TNAME("cppfunc"), [](const std::string& v) {
+            REQUIRE(v == "check_string");
+        });
+        l.extract<void()>(LUA_TNAME("call_cpp"))();
+
         REQUIRE(top == l.top());
     }
 
@@ -136,6 +168,12 @@ TEST_CASE("basic_types") {
         l.extract<void(const std::string&)>(LUA_TNAME("check_string"))("");
 
         REQUIRE(l.extract<std::string(std::string)>(LUA_TNAME("test"))("") == "");
+
+        l.provide(LUA_TNAME("cppfunc"), [](const std::string& v) {
+            REQUIRE(v.empty());
+        });
+        l.extract<void()>(LUA_TNAME("call_cpp"))();
+
         REQUIRE(top == l.top());
     }
 
@@ -150,6 +188,12 @@ TEST_CASE("basic_types") {
 
         l.provide(LUA_TNAME("glob"), vec{5, 4, 3, 2, 1, 0, -1, 2, 3, 4});
         REQUIRE(l.extract<vec()>(LUA_TNAME("test_glob"))() == vec{5, 4, 3, 2, 1, 0, -1, 2, 3, 4});
+
+        l.provide(LUA_TNAME("cppfunc"), [](const vec& v) {
+            REQUIRE(v == vec{10, 11, 12, 15, 18});
+        });
+        l.extract<void()>(LUA_TNAME("call_cpp"))();
+
         REQUIRE(top == l.top());
     }
 
@@ -161,6 +205,12 @@ TEST_CASE("basic_types") {
         l.extract<void(const vec&)>(LUA_TNAME("check_array"))({});
 
         REQUIRE(l.extract<vec(const vec&)>(LUA_TNAME("test"))(vec{}) == vec{});
+
+        l.provide(LUA_TNAME("cppfunc"), [](const vec& v) {
+            REQUIRE(v.empty());
+        });
+        l.extract<void()>(LUA_TNAME("call_cpp"))();
+
         REQUIRE(top == l.top());
     }
 
@@ -175,6 +225,12 @@ TEST_CASE("basic_types") {
 
         l.provide(LUA_TNAME("glob"), vec{5, 4, 3, 2, 1, 0});
         REQUIRE(l.extract<vec()>(LUA_TNAME("test_glob"))() == vec{5, 4, 3, 2, 1, 0});
+
+        l.provide(LUA_TNAME("cppfunc"), [](const vec& v) {
+            REQUIRE(v == vec{10, 11, 12, 15, 18, 15});
+        });
+        l.extract<void()>(LUA_TNAME("call_cpp"))();
+
         REQUIRE(top == l.top());
     }
 
@@ -186,6 +242,12 @@ TEST_CASE("basic_types") {
         l.extract<void(const vec&)>(LUA_TNAME("check_array"))({});
 
         REQUIRE(l.extract<vec(const vec&)>(LUA_TNAME("test"))(vec{}) == vec{});
+
+        l.provide(LUA_TNAME("cppfunc"), [](const vec& v) {
+            REQUIRE(v.empty());
+        });
+        l.extract<void()>(LUA_TNAME("call_cpp"))();
+
         REQUIRE(top == l.top());
     }
 
@@ -200,6 +262,12 @@ TEST_CASE("basic_types") {
 
         l.provide(LUA_TNAME("glob"), vec{"hello", ", ", "world", "!"});
         REQUIRE(l.extract<vec()>(LUA_TNAME("test_glob"))() == vec{"hello", ", ", "world", "!"});
+
+        l.provide(LUA_TNAME("cppfunc"), [](const vec& v) {
+            REQUIRE(v == vec{"one", "two", "three", "four"});
+        });
+        l.extract<void()>(LUA_TNAME("call_cpp"))();
+
         REQUIRE(top == l.top());
     }
 
@@ -211,6 +279,12 @@ TEST_CASE("basic_types") {
         l.extract<void(const vec&)>(LUA_TNAME("check_array"))({});
 
         REQUIRE(l.extract<vec(const vec&)>(LUA_TNAME("test"))(vec{}) == vec{});
+
+        l.provide(LUA_TNAME("cppfunc"), [](const vec& v) {
+            REQUIRE(v.empty());
+        });
+        l.extract<void()>(LUA_TNAME("call_cpp"))();
+
         REQUIRE(top == l.top());
     }
 
@@ -240,6 +314,9 @@ TEST_CASE("basic_types") {
             "        }\n"
             "    }\n"
             "end\n"
+            "function call_cpp()\n"
+            "    cppfunc({true, {{99.9, {\"abc\", \"defg\"}}}})\n"
+            "end\n"
         });
         auto top = l.top();
 
@@ -258,6 +335,12 @@ TEST_CASE("basic_types") {
                                                                       {202.202, {"cccc", "dddd"}},
                                                                       {303.303, {"eeeee", "fffff"}},
                                                                   }});
+
+        l.provide(LUA_TNAME("cppfunc"), [](const type& v) {
+            REQUIRE(v == type{true, {{99.9, {"abc", "defg"}}}});
+        });
+        l.extract<void()>(LUA_TNAME("call_cpp"))();
+
         REQUIRE(top == l.top());
     }
 }

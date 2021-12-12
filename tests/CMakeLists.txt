@@ -10,6 +10,7 @@ find_package(Catch2 REQUIRED)
 add_executable(
     tests
     basic_types.cpp
+    functions.cpp
     )
 
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/submodules/Catch2/extras)

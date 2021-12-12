@@ -222,7 +222,7 @@ public:
 
 private:
     void register_usertypes() {
-        luacpp_tforeach<luacpp_typespec_list>([this](auto typespec) {
+        luacpp_tforeach<luacpp_typespec_list<0>>([this](auto typespec) {
             using type = decltype(typespec.type());
             provide_member<type>(LUA_TNAME("__gc"), [](type* userdata) { userdata->~type(); });
 
