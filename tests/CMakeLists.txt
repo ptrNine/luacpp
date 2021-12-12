@@ -13,12 +13,20 @@ add_executable(
     functions.cpp
     )
 
+add_executable(benchmarks benchmarks.cpp)
+
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/submodules/Catch2/extras)
 
 target_include_directories(tests PUBLIC ${luajit_INCLUDE_DIRS})
 target_include_directories(tests PUBLIC ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(tests ${luajit_LIBRARIES} Catch2::Catch2WithMain)
+
+target_include_directories(benchmarks PUBLIC ${luajit_INCLUDE_DIRS})
+target_include_directories(benchmarks PUBLIC ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(benchmarks ${luajit_LIBRARIES} Catch2::Catch2WithMain)
+
 include(CTest)
 include(Catch)
 catch_discover_tests(tests)
+catch_discover_tests(benchmarks)
 

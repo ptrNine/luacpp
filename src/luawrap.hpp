@@ -536,7 +536,7 @@ int _luacpp_function_call(lua_State* l, auto&& function) {
     }
     else {
         luacpp_push(
-            l, []<size_t... Idxs>(lua_State * l, auto&& function, std::index_sequence<Idxs...>) {
+            l, []<size_t... Idxs>([[maybe_unused]] lua_State* l, auto&& function, std::index_sequence<Idxs...>) {
                 return function(luacpp_get<ArgsT>(l, int(Idxs + 1))...);
             }(l, function, std::make_index_sequence<sizeof...(ArgsT)>()));
         return 1;

@@ -37,9 +37,22 @@ public:
 
         luaL_openlibs(l);
 
+        lua_pushlightuserdata(l, reinterpret_cast<void*>(&exception_wrapper)); // NOLINT
+        luaJIT_setmode(l, -1, LUAJIT_MODE_WRAPCFUNC | LUAJIT_MODE_ON);
+        lua_pop(l, 1);
+
         //lua_atpanic(l, &panic_wrapper);
 
         register_usertypes();
+    }
+
+    static int exception_wrapper(lua_State* l, lua_CFunction f) {
+        try {
+            return f(l);
+        } catch (const std::exception& e) {
+            lua_pushstring(l, e.what());
+        }
+        return lua_error(l);
     }
 
     //static int panic_wrapper(lua_State* l) {
