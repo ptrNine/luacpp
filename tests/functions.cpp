@@ -39,8 +39,25 @@ TEST_CASE("functions") {
 }
 
 TEST_CASE("functions_error_conditions") {
-    auto l = luactx(lua_code{R"(function call0() cppfunc() end function call2() cppfunc(1, 2) end function call3() cppfunc("string") end)"});
+    auto code = R"(
+    function call0()
+        cppfunc()
+    end
+    function call2()
+        cppfunc(1, 2)
+    end
+    function call3()
+        cppfunc("string")
+    end
+    function call4()
+        cppfunc2({{true, 22.0}, {false, 33.0}, {true, "string"}})
+    end
+    )";
+
+    auto l = luactx(lua_code{code});
     l.provide(LUA_TNAME("cppfunc"), [](int) {});
+
+    auto top = l.top();
     bool catched = false;
     try {
         l.extract<void()>(LUA_TNAME("call0"))();
@@ -48,6 +65,7 @@ TEST_CASE("functions_error_conditions") {
         catched = true;
     }
     REQUIRE(catched);
+    REQUIRE(l.top() == top);
 
     catched = false;
     try {
@@ -57,6 +75,7 @@ TEST_CASE("functions_error_conditions") {
         catched = true;
     }
     REQUIRE(catched);
+    REQUIRE(l.top() == top);
 
     catched = false;
     try {
@@ -66,5 +85,17 @@ TEST_CASE("functions_error_conditions") {
         catched = true;
     }
     REQUIRE(catched);
+    REQUIRE(l.top() == top);
 
+    catched = false;
+    using type1 = std::vector<std::tuple<bool, double>>;
+    l.provide(LUA_TNAME("cppfunc2"), [](const type1&) {});
+    try {
+        l.extract<void()>(LUA_TNAME("call4"))();
+    }
+    catch (...) {
+        catched = true;
+    }
+    REQUIRE(catched);
+    REQUIRE(l.top() == top);
 }
