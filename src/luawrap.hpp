@@ -233,7 +233,8 @@ auto luacpp_get(lua_State* l, int idx) {
 template <typename T>
     requires std::same_as<std::decay_t<T>, std::string>
 bool luacpp_check(lua_State* l, int idx) {
-    return lua_isstring(l, idx);
+    /* Disable implicit number-to-string casting for proper overload resolution */
+    return lua_isstring(l, idx) && !lua_isnumber(l, idx);
 }
 
 namespace details {
@@ -398,7 +399,7 @@ bool luacpp_check(lua_State* l, int idx) {
 
     bool result = true;
 
-    static constexpr auto getall = []<size_t... Idxs>([[maybe_unused]] lua_State * l, bool& result, std::index_sequence<Idxs...>) {
+    static constexpr auto checkall = []<size_t... Idxs>([[maybe_unused]] lua_State * l, bool& result, std::index_sequence<Idxs...>) {
         [[maybe_unused]] static constexpr auto op = []<size_t idx>(lua_State* l, bool& result, luacppdetails::nttp_tag<idx>) {
             lua_next(l, -2);
             if (result)
@@ -489,11 +490,11 @@ struct luacpp_overloaded_func_storage {
     }
 
     int call(lua_State* state) const {
-        return std::apply(f, std::tuple_cat(std::tuple{state}, rfs));
+        return std::apply(f, std::tuple_cat(std::tuple{state}, *rfs));
     }
 
     F f;
-    std::tuple<RFs...> rfs;
+    std::optional<std::tuple<RFs...>> rfs;
 };
 
 template <typename F, typename RF, uint64_t UniqId>
@@ -834,7 +835,7 @@ auto luacpp_wrap_overloaded_functions(Fs&&... functions) {
     auto func = &details::lua_overloaded_call_dispatch_entry<Fs...>;
     auto& func_storage = luacpp_overloaded_func_storage<decltype(func), UniqId, std::decay_t<Fs>...>::instance();
     func_storage.f = std::move(func);
-    func_storage.rfs = std::forward_as_tuple(std::forward<Fs>(functions)...);
+    func_storage.rfs.emplace(std::forward_as_tuple(std::forward<Fs>(functions)...));
 
     return &luacpp_wrapped_overloaded_function<decltype(func), UniqId, std::decay_t<Fs>...>{}.call;
 

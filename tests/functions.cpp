@@ -36,6 +36,56 @@ TEST_CASE("functions") {
         l.extract<void()>(LUA_TNAME("cppcall"))();
         REQUIRE(called);
     }
+
+    SECTION("overloaded") {
+        auto code = R"(
+            function cppcall()
+                cppfunc()
+                cppfunc(1, 2, 3)
+                cppfunc("one", 2, "three")
+                cppfunc({{true, {"one", "two"}}, {false, {"three", "four"}}})
+                cppfunc({{true, {"one", "two"}}})
+                cppfunc({{true, {"one", 2}}, {false, {"three", 4}}})
+            end
+        )";
+        int calls = 0;
+        auto l = luactx(lua_code{code});
+
+        using type1 = std::array<std::tuple<bool, std::array<std::string, 2>>, 2>;
+        using type2 = std::array<std::tuple<bool, std::array<std::string, 2>>, 1>;
+        using type3 = std::vector<std::tuple<bool, std::tuple<std::string, double>>>;
+
+        l.provide(
+            LUA_TNAME("cppfunc"),
+            [&] { ++calls; },
+            [&](double a, double b, double c) {
+                ++calls;
+                REQUIRE(a == 1_a);
+                REQUIRE(b == 2_a);
+                REQUIRE(c == 3_a);
+            },
+            [&](const std::string& a, double b, const std::string& c) {
+                ++calls;
+                REQUIRE(a == "one");
+                REQUIRE(b == 2_a);
+                REQUIRE(c == "three");
+            },
+            [&](const type1& v) {
+                ++calls;
+                std::cout << std::get<0>(v[0]) << " " << std::get<1>(v[0])[0] << " " << std::get<1>(v[0])[1] << std::endl;
+                REQUIRE(v == type1{{{true, {"one", "two"}}, {false, {"three", "four"}}}});
+            },
+            [&](const type2& v) {
+                ++calls;
+                REQUIRE(v == type2{{{true, {"one", "two"}}}});
+            },
+            [&](const type3& v) {
+                ++calls;
+                REQUIRE(v == type3{{{true, {"one", 2}}, {false, {"three", 4}}}});
+            });
+        l.extract<void()>(LUA_TNAME("cppcall"))();
+        REQUIRE(calls == 6);
+    }
 }
 
 TEST_CASE("functions_error_conditions") {
