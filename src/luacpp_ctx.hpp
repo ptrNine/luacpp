@@ -1,8 +1,8 @@
 #pragma once
 
-#include "luawrap.hpp"
-#include "lua_member_table.hpp"
-#include "lua_assist_gen.hpp"
+#include "luacpp_details.hpp"
+#include "luacpp_member_table.hpp"
+#include "luacpp_assist_gen.hpp"
 
 class luactx_newstate_failed : public std::runtime_error {
 public:

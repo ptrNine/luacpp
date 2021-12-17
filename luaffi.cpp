@@ -1,13 +1,7 @@
 #include <iostream>
 #include <fstream>
 
-#include "src/lua_usertype.hpp"
-
-
-#include "src/luactx.hpp"
-#include "src/lua_assist_gen.hpp"
-
-#include <vector>
+#include "src/luacpp_ctx.hpp"
 
 /*
 template <>

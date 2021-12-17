@@ -1,7 +1,7 @@
 #pragma once
 
 #include <map>
-#include "luawrap.hpp"
+#include <string>
 
 #define lua_getsetez(lua_or_cpp_name)                                                                                  \
     {                                                                                                                  \

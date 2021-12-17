@@ -5,7 +5,7 @@
 #include <memory>
 #include <tuple>
 
-#include "lua_usertype.hpp"
+#include "luacpp_basic.hpp"
 
 struct luacpp_type_registry {
     static constexpr auto no_index = size_t(-1);

@@ -1,7 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/catch_approx.hpp>
 #include <catch2/benchmark/catch_benchmark.hpp>
-#include "luactx.hpp"
+#include "luacpp_ctx.hpp"
 
 using namespace Catch::literals;
 

@@ -2,7 +2,7 @@
 
 #include <lua.hpp>
 #include <stdexcept>
-#include "lua_utils.hpp"
+#include "luacpp_utils.hpp"
 
 class luactx_panic : public std::runtime_error {
 public:

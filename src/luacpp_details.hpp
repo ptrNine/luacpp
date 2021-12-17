@@ -6,9 +6,9 @@
 #include <type_traits>
 #include <optional>
 
-#include "lua_lib.hpp"
-#include "lua_usertype_registry.hpp"
-#include "lua_utils.hpp"
+#include "luacpp_lib.hpp"
+#include "luacpp_usertype_registry.hpp"
+#include "luacpp_utils.hpp"
 
 template <typename T>
 concept LuaNumber = (std::is_integral_v<T> || std::is_floating_point_v<T>) && !std::same_as<T, bool>;

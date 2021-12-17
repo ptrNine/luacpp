@@ -4,6 +4,7 @@
 #include <vector>
 #include <map>
 #include <queue>
+#include <optional>
 
 struct luacpp_assist_function {
     luacpp_assist_function(size_t args_count) {

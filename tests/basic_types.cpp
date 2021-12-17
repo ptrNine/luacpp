@@ -4,7 +4,7 @@
 
 using namespace Catch::literals;
 
-#include "luactx.hpp"
+#include "luacpp_ctx.hpp"
 
 #define TEST_CODE(CHECK_VALUE)                                                                                         \
     "function test(v)\n"                                                                                               \
