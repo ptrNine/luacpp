@@ -190,58 +190,6 @@ constexpr void luacpp_tforeach(auto&& f) {
     }(f, T{});
 }
 
-
-#include <string>
-#include <iostream>
-
-struct vec_sample {
-    float x, y, z;
-
-    vec_sample(float ix, float iy, float iz): x(ix), y(iy), z(iz) {
-        std::cout << "New CTOR" << std::endl;
-    }
-
-    vec_sample(const vec_sample& v): x(v.x), y(v.y), z(v.z) {
-        std::cout << "Copy CTOR" << std::endl;
-    }
-
-    vec_sample(vec_sample&& v) noexcept: x(v.x), y(v.y), z(v.z) {
-        std::cout << "Move CTOR" << std::endl;
-    }
-
-    vec_sample& operator=(const vec_sample& v) {
-        std::cout << "Copy asignment" << std::endl;
-        x = v.x;
-        y = v.y;
-        z = v.z;
-        return *this;
-    }
-
-    vec_sample& operator=(vec_sample&& v) noexcept {
-        std::cout << "Move asignment" << std::endl;
-        x = v.x;
-        y = v.y;
-        z = v.z;
-        return *this;
-    }
-
-    void test(int i) {
-        std::cout << "int f: arg = " << i << " vec: " << tostring() << std::endl;
-    }
-    void test(std::string) {
-        std::cout << __PRETTY_FUNCTION__ << std::endl;
-    }
-
-    std::string tostring() const noexcept {
-        return std::to_string(x) + ", " + std::to_string(y) + ", " + std::to_string(z);
-    }
-
-    ~vec_sample() {
-        std::cout << "DELETED" << std::endl;
-    }
-};
-
-
 template <size_t>
 struct luacpp_typespec_list_s;
 
