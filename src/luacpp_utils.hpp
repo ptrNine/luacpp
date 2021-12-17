@@ -2,10 +2,12 @@
 
 #include <stdexcept>
 
+namespace luacpp {
+
 template <typename F>
-struct luacpp_exception_guard {
-    luacpp_exception_guard(F ifinalizer): finalizer(std::move(ifinalizer)) {}
-    ~luacpp_exception_guard() {
+struct exception_guard {
+    exception_guard(F ifinalizer): finalizer(std::move(ifinalizer)) {}
+    ~exception_guard() {
         if (!dismissed && std::uncaught_exceptions() != uncaught)
             finalizer();
     }
@@ -20,17 +22,19 @@ struct luacpp_exception_guard {
 };
 
 template <typename F>
-struct luacpp_finalizer {
-    luacpp_finalizer(F ifinalizer): finalizer(std::move(ifinalizer)) {}
-    ~luacpp_finalizer() {
+struct finalizer {
+    finalizer(F ifinalizer): finalizer_f(std::move(ifinalizer)) {}
+    ~finalizer() {
         if (!dismissed)
-            finalizer();
+            finalizer_f();
     }
 
     void dismiss() {
         dismissed = true;
     }
 
-    F    finalizer;
+    F    finalizer_f;
     bool dismissed = false;
 };
+
+} // namespace luacpp

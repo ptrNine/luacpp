@@ -2,6 +2,8 @@
 #include <catch2/benchmark/catch_benchmark.hpp>
 #include "luacpp_ctx.hpp"
 
+using namespace luacpp;
+
 constexpr auto luacode = R"(
 function no_arg()
     return 1

@@ -4,26 +4,30 @@
 #include "luacpp_member_table.hpp"
 #include "luacpp_assist_gen.hpp"
 
-class luactx_newstate_failed : public std::runtime_error {
-public:
-    luactx_newstate_failed(): std::runtime_error("Failed to create lua state") {}
-};
+namespace luacpp {
 
-class luactx_cannot_open_file : public std::runtime_error {
-public:
-    luactx_cannot_open_file(const std::string& filename):
-        std::runtime_error("Cannot open lua script file: " + filename) {}
-};
+namespace errors
+{
+    class newstate_failed : public std::runtime_error {
+    public:
+        newstate_failed(): std::runtime_error("Failed to create lua state") {}
+    };
 
-class luactx_syntax_error : public std::runtime_error {
-public:
-    luactx_syntax_error(const std::string& msg): std::runtime_error(msg) {}
-};
+    class cannot_open_file : public std::runtime_error {
+    public:
+        cannot_open_file(const std::string& filename): std::runtime_error("Cannot open lua script file: " + filename) {}
+    };
 
-class luactx_memory_error : public std::runtime_error {
-public:
-    luactx_memory_error(): std::runtime_error("lua memory error") {}
-};
+    class syntax_error : public std::runtime_error {
+    public:
+        syntax_error(const std::string& msg): std::runtime_error(msg) {}
+    };
+
+    class memory_error : public std::runtime_error {
+    public:
+        memory_error(): std::runtime_error("lua memory error") {}
+    };
+} // namespace errors
 
 struct lua_code {
     std::string code;
@@ -33,7 +37,7 @@ class luactx {
 public:
     luactx(bool generate_assist = false): l(luaL_newstate()), generate_assist_file(generate_assist) {
         if (!l)
-            throw luactx_newstate_failed();
+            throw errors::newstate_failed();
 
         luaL_openlibs(l);
 
@@ -63,14 +67,14 @@ public:
     luactx(const char* entry_file, bool generate_assist = false): luactx(generate_assist) {
         switch (luaL_loadfile(l, entry_file)) {
         case LUA_ERRSYNTAX:
-            throw luactx_syntax_error(lua_tostring(l, -1));
+            throw errors::syntax_error(lua_tostring(l, -1));
         case LUA_ERRMEM:
-            throw luactx_memory_error();
+            throw errors::memory_error();
         case LUA_ERRFILE:
-            throw luactx_cannot_open_file(entry_file);
+            throw errors::cannot_open_file(entry_file);
         }
 
-        auto guard = luacpp_exception_guard{[this] {
+        auto guard = exception_guard{[this] {
             lua_close(l);
         }};
 
@@ -80,16 +84,16 @@ public:
     luactx(const lua_code& code, bool generate_assist = false): luactx(generate_assist) {
         switch (luaL_loadstring(l, code.code.data())) {
         case LUA_ERRSYNTAX:
-            throw luactx_syntax_error(lua_tostring(l, -1));
+            throw errors::syntax_error(lua_tostring(l, -1));
         case LUA_ERRMEM:
-            throw luactx_memory_error();
+            throw errors::memory_error();
         }
 
-        auto guard = luacpp_exception_guard{[this] {
+        auto guard = exception_guard{[this] {
             lua_close(l);
         }};
 
-        luacpp_call(l, 0, 0);
+        luacall(l, 0, 0);
     }
 
     ~luactx() {
@@ -98,7 +102,7 @@ public:
     }
 
     [[nodiscard]]
-    lua_State* ctx() const {
+    lua_State* state() const {
         return l;
     }
 
@@ -107,7 +111,7 @@ public:
         if (generate_assist_file)
             provide_assist<NameT, T>();
 
-        return lua_provide(NameT{}, l, std::forward<T>(value));
+        return luaprovide(NameT{}, l, std::forward<T>(value));
     }
 
     template <typename NameT, typename F1, typename F2, typename... Fs>
@@ -115,7 +119,7 @@ public:
         if (generate_assist_file)
             provide_assist<NameT, F1, F2, Fs...>();
 
-        return lua_provide_overloaded(
+        return luaprovide_overloaded(
             NameT{}, l, std::forward<F1>(function1), std::forward<F2>(function2), std::forward<Fs>(functions)...);
     }
 
@@ -125,11 +129,11 @@ public:
             if constexpr (LuaFunctionLike<T>)
                 provide_assist_for_member_function<UserType, NameT, T>();
             else
-                provide_assist<decltype(luacpp_type_registry::get_typespec<UserType>().lua_name().dot(NameT{})), T>();
+                provide_assist<decltype(type_registry::get_typespec<UserType>().lua_name().dot(NameT{})), T>();
         }
 
-        return lua_provide(
-            luacpp_type_registry::get_typespec<UserType>().lua_name().dot(NameT{}), l, std::forward<T>(value));
+        return luaprovide(
+            type_registry::get_typespec<UserType>().lua_name().dot(NameT{}), l, std::forward<T>(value));
     }
 
     template <typename UserType, typename NameT, typename F1, typename F2, typename... Fs>
@@ -137,7 +141,7 @@ public:
         if (generate_assist_file)
             provide_assist_for_member_function<UserType, NameT, F1, F2, Fs...>();
 
-        return lua_provide_overloaded(luacpp_type_registry::get_typespec<UserType>().lua_name().dot(NameT{}),
+        return luaprovide_overloaded(type_registry::get_typespec<UserType>().lua_name().dot(NameT{}),
                                       l,
                                       std::forward<F1>(function1),
                                       std::forward<F2>(function2),
@@ -145,9 +149,9 @@ public:
     }
 
     template <typename UserType>
-    void set_member_table(luacpp_member_table<UserType> table) {
+    void set_member_table(member_table<UserType> table) {
         if (generate_assist_file) {
-            auto class_name = luacpp_type_registry::get_typespec<UserType>().lua_name();
+            auto class_name = type_registry::get_typespec<UserType>().lua_name();
             for (auto& [field_name, _] : table) assist.field(std::string(class_name) + '.' + field_name);
         }
 
@@ -156,46 +160,46 @@ public:
             if (found_field != table.end())
                 found_field->second.get(data, *this);
             else
-                luaL_getmetafield(ctx(), -2, field.data());
-            return luacpp_placeholder{};
+                luaL_getmetafield(state(), -2, field.data());
+            return placeholder{};
         });
 
         provide_member<UserType>(
             LUA_TNAME("__newindex"),
-            [this, table = std::move(table)](UserType& data, const std::string& field, luacpp_placeholder) {
+            [this, table = std::move(table)](UserType& data, const std::string& field, placeholder) {
                 auto found_field = table.find(field);
                 if (found_field != table.end()) {
                     if (!found_field->second.set)
-                        throw luacpp_access_error(std::string("the field '") + field + "' of object type " +
-                                                  luacpp_type_registry::get_typespec<UserType>().lua_name().data() +
-                                                  " is private");
+                        throw errors::lua_access_error(std::string("the field '") + field + "' of object type " +
+                                                       type_registry::get_typespec<UserType>().lua_name().data() +
+                                                       " is private");
                     found_field->second.set(data, *this);
                 }
                 else
-                    throw luacpp_access_error(std::string("object of type '") +
-                                              luacpp_type_registry::get_typespec<UserType>().lua_name().data() +
-                                              "' has no '" + field + "' field");
+                    throw errors::lua_access_error(std::string("object of type '") +
+                                                   type_registry::get_typespec<UserType>().lua_name().data() +
+                                                   "' has no '" + field + "' field");
             });
     }
 
     template <typename T, typename NameT>
     decltype(auto) extract(NameT) {
-        return luacpp_extract<T>(NameT{}, l);
+        return luaextract<T>(NameT{}, l);
     }
 
     template <typename T>
     void push(T&& value) {
-        luacpp_push(l, std::forward<T>(value));
+        luapush(l, std::forward<T>(value));
     }
 
     template <typename T>
     decltype(auto) get(int stack_idx) {
-        return luacpp_get<T>(l, stack_idx);
+        return luaget<T>(l, stack_idx);
     }
 
     template <typename T>
     T pop() {
-        auto res = luacpp_get<T>(l, -1);
+        auto res = luaget<T>(l, -1);
         lua_pop(l, 1);
         return res;
     }
@@ -235,7 +239,7 @@ public:
 
 private:
     void register_usertypes() {
-        luacpp_tforeach<luacpp_typespec_list<0>>([this](auto typespec) {
+        tforeach<typespec_list<0>>([this](auto typespec) {
             using type = decltype(typespec.type());
             provide_member<type>(LUA_TNAME("__gc"), [](type* userdata) { userdata->~type(); });
 
@@ -245,10 +249,10 @@ private:
             lua_pop(l, 1);
 
             if (generate_assist_file)
-                assist.field(luacpp_type_registry::get_typespec<type>().lua_name(), true);
+                assist.field(type_registry::get_typespec<type>().lua_name(), true);
 
-            if constexpr (requires { luacpp_usertype_method_loader<type>(); })
-                luacpp_usertype_method_loader<type>()(*this);
+            if constexpr (requires { usertype_method_loader<type>(); })
+                usertype_method_loader<type>()(*this);
         });
     }
 
@@ -264,9 +268,9 @@ private:
             if constexpr (LuaFunctionLike<type>) {
                 using return_t       = typename details::lua_function_traits<type>::return_t;
                 constexpr auto arity = details::lua_function_traits<type>::arity;
-                if constexpr (luacpp_type_registry::get_index<return_t>() != luacpp_type_registry::no_index)
+                if constexpr (type_registry::get_index<return_t>() != type_registry::no_index)
                     assist.function(
-                        NameT{}, arity, std::string(luacpp_type_registry::get_typespec<return_t>().lua_name()));
+                        NameT{}, arity, std::string(type_registry::get_typespec<return_t>().lua_name()));
                 else
                     assist.function(NameT{}, arity);
                 return;
@@ -275,14 +279,14 @@ private:
                 using return_t       = typename details::lua_member_function_traits<type>::return_t;
                 constexpr auto arity = details::lua_member_function_traits<type>::arity;
                 constexpr auto class_name =
-                    luacpp_type_registry::get_typespec<typename details::lua_member_function_traits<type>::class_t>()
+                    type_registry::get_typespec<typename details::lua_member_function_traits<type>::class_t>()
                         .lua_name();
 
-                if constexpr (luacpp_type_registry::get_index<return_t>() != luacpp_type_registry::no_index)
+                if constexpr (type_registry::get_index<return_t>() != type_registry::no_index)
                     assist.member_function(class_name,
                                            NameT{},
                                            arity,
-                                           std::string(luacpp_type_registry::get_typespec<return_t>().lua_name()));
+                                           std::string(type_registry::get_typespec<return_t>().lua_name()));
                 else
                     assist.member_function(class_name, NameT{}, arity);
                 return;
@@ -304,11 +308,11 @@ private:
             using type                = std::decay_t<T>;
             using return_t            = typename details::lua_function_traits<type>::return_t;
             constexpr auto arity      = details::lua_function_traits<type>::arity;
-            constexpr auto class_name = luacpp_type_registry::get_typespec<std::decay_t<ClassT>>().lua_name();
+            constexpr auto class_name = type_registry::get_typespec<std::decay_t<ClassT>>().lua_name();
 
             std::optional<std::string> result_metatable;
-            if constexpr (luacpp_type_registry::get_index<return_t>() != luacpp_type_registry::no_index)
-                result_metatable.emplace(luacpp_type_registry::get_typespec<return_t>().lua_name());
+            if constexpr (type_registry::get_index<return_t>() != type_registry::no_index)
+                result_metatable.emplace(type_registry::get_typespec<return_t>().lua_name());
 
             /* Check if the first argument has ClassT type */
             constexpr bool captured_self = std::is_same_v<
@@ -324,5 +328,7 @@ private:
     lua_State* l;
 
     bool generate_assist_file = false;
-    luacpp_assist_gen assist;
+    assist_gen assist;
 };
+
+} // namespace luacpp

@@ -6,8 +6,10 @@
 #include <queue>
 #include <optional>
 
-struct luacpp_assist_function {
-    luacpp_assist_function(size_t args_count) {
+namespace luacpp {
+
+struct assist_function {
+    assist_function(size_t args_count) {
         if (args_count > 16) {
             vararg = true;
             return;
@@ -19,31 +21,31 @@ struct luacpp_assist_function {
     }
 
     template <typename... Ts>
-    luacpp_assist_function(Ts&&... iarg_names): arg_names{std::forward<Ts>(iarg_names)...} {}
+    assist_function(Ts&&... iarg_names): arg_names{std::forward<Ts>(iarg_names)...} {}
 
     std::vector<std::string> arg_names;
     bool vararg = false;
 };
 
-enum class luacpp_assist_type {
+enum class assist_type {
     field,
     function,
     member_function
 };
 
-struct luacpp_assist_some {
+struct assist_some {
     void push_function(std::string name, std::vector<std::string> args, std::optional<std::string> metatable_result) {
         auto& func =
-            children.insert_or_assign(name + " " + std::to_string(args.size()), luacpp_assist_some{}).first->second;
-        func.type             = luacpp_assist_type::function;
+            children.insert_or_assign(name + " " + std::to_string(args.size()), assist_some{}).first->second;
+        func.type             = assist_type::function;
         func.name             = std::move(name);
         func.args             = std::move(args);
         func.metatable_result = std::move(metatable_result);
     }
 
-    luacpp_assist_some* push_field(std::string name, bool metatable) {
-        auto& field     = children.emplace(name, luacpp_assist_some{}).first->second;
-        field.type      = luacpp_assist_type::field;
+    assist_some* push_field(std::string name, bool metatable) {
+        auto& field     = children.emplace(name, assist_some{}).first->second;
+        field.type      = assist_type::field;
         field.name      = std::move(name);
         if (metatable)
             field.metatable = true;
@@ -56,8 +58,8 @@ struct luacpp_assist_some {
                               std::optional<std::string> metatable_result,
                               bool                       captured_self) {
         auto& func =
-            children.insert_or_assign(name + " " + std::to_string(args.size()), luacpp_assist_some{}).first->second;
-        func.type             = luacpp_assist_type::member_function;
+            children.insert_or_assign(name + " " + std::to_string(args.size()), assist_some{}).first->second;
+        func.type             = assist_type::member_function;
         func.name             = std::move(name);
         func.args             = std::move(args);
         func.class_name       = std::move(class_name);
@@ -73,26 +75,26 @@ struct luacpp_assist_some {
     void traverse(std::string& out, size_t indent = 0) const {
         if (name.empty()) {
             for (auto& [_, child] : children)
-                if (child.type == luacpp_assist_type::field)
+                if (child.type == assist_type::field)
                     child.traverse(out, indent);
             for (auto& [_, child] : children)
-                if (child.type != luacpp_assist_type::field)
+                if (child.type != assist_type::field)
                     child.traverse(out, indent);
             return;
         }
 
         put_indent(out, indent);
         switch (type) {
-        case luacpp_assist_type::field:
+        case assist_type::field:
             out += name;
             out += " = {";
             if (!children.empty()) {
                 out += '\n';
                 for (auto& [_, child] : children)
-                    if (child.type == luacpp_assist_type::field)
+                    if (child.type == assist_type::field)
                         child.traverse(out, indent + 4);
                 for (auto& [_, child] : children)
-                    if (child.type != luacpp_assist_type::field)
+                    if (child.type != assist_type::field)
                         child.traverse(out, indent + 4);
             }
             if (metatable) {
@@ -104,7 +106,7 @@ struct luacpp_assist_some {
             }
             out += '}';
             break;
-        case luacpp_assist_type::function:
+        case assist_type::function:
             out += name;
             out += " = function(";
             if (!args.empty())
@@ -129,7 +131,7 @@ struct luacpp_assist_some {
                 out += ' ';
             out += "end";
             break;
-        case luacpp_assist_type::member_function:
+        case assist_type::member_function:
             out += "function ";
             out += class_name;
             out += captured_self ? ':' : '.';
@@ -164,15 +166,15 @@ struct luacpp_assist_some {
 
     std::string                               name;
     std::string                               class_name;
-    luacpp_assist_type                        type;
-    std::map<std::string, luacpp_assist_some> children;
+    assist_type                        type;
+    std::map<std::string, assist_some> children;
     std::vector<std::string>                  args;
     bool                                      metatable     = false;
     bool                                      captured_self = true;
     std::optional<std::string>                metatable_result;
 };
 
-class luacpp_assist_gen {
+class assist_gen {
 public:
     template <bool push_last = true>
     auto field(std::string_view name, bool metatable = false) {
@@ -237,6 +239,8 @@ public:
     }
 
 private:
-    luacpp_assist_some root;
+    assist_some root;
     std::queue<std::vector<std::string>> current_argnames;
 };
+
+} // namespace luacpp

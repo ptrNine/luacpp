@@ -22,27 +22,30 @@
     }
 
 #define LUA_GETSET(usertype, lua_name, cpp_name)                                                                       \
-    std::pair<std::string, luacpp_getset<usertype>> {                                                                  \
+    std::pair<std::string, luacpp::getset<usertype>> {                                                                 \
         lua_name, {                                                                                                    \
-            [](const usertype& v, luactx& ctx) { ctx.push(v.cpp_name); }, [](usertype& v, luactx& ctx) {               \
-                ctx.get_new(v.cpp_name);                                                                               \
-            }                                                                                                          \
+            [](const luacpp::usertype& v, luacpp::luactx& ctx) { ctx.push(v.cpp_name); },                              \
+                [](luacpp::usertype& v, luacpp::luactx& ctx) {                                                         \
+                    ctx.get_new(v.cpp_name);                                                                           \
+                }                                                                                                      \
         }                                                                                                              \
     }
 
 #define LUA_GET(usertype, lua_name, cpp_name)                                                                          \
-    std::pair<std::string, luacpp_getset<usertype>> {                                                                  \
+    std::pair<std::string, luacpp::getset<usertype>> {                                                                 \
         lua_name, {                                                                                                    \
-            [](const usertype& v, luactx& ctx) {                                                                       \
+            [](const luacpp::usertype& v, luacpp::luactx& ctx) {                                                       \
                 ctx.push(v.cpp_name);                                                                                  \
             }                                                                                                          \
         }                                                                                                              \
     }
 
+namespace luacpp {
+
 class luactx;
 
 template <typename T>
-struct luacpp_getter {
+struct getter {
     void operator()(const T& usertype_value, luactx& ctx) const {
         func(usertype_value, ctx);
     }
@@ -50,7 +53,7 @@ struct luacpp_getter {
 };
 
 template <typename T>
-struct luacpp_setter {
+struct setter {
     void operator()(T& usertype_value, luactx& ctx) const {
         func(usertype_value, ctx);
     }
@@ -61,13 +64,15 @@ struct luacpp_setter {
 };
 
 template <typename T>
-struct luacpp_getset {
-    luacpp_getset(auto getter): get{getter} {}
-    luacpp_getset(auto getter, auto setter): get{getter}, set(setter) {}
+struct getset {
+    getset(auto getter): get{getter} {}
+    getset(auto getter, auto setter): get{getter}, set(setter) {}
 
-    luacpp_getter<T> get;
-    luacpp_setter<T> set;
+    getter<T> get;
+    setter<T> set;
 };
 
 template <typename T>
-using luacpp_member_table = std::map<std::string, luacpp_getset<T>>;
+using member_table = std::map<std::string, getset<T>>;
+
+} // namespace luacpp

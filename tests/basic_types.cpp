@@ -5,6 +5,7 @@
 using namespace Catch::literals;
 
 #include "luacpp_ctx.hpp"
+using namespace luacpp;
 
 #define TEST_CODE(CHECK_VALUE)                                                                                         \
     "function test(v)\n"                                                                                               \

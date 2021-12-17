@@ -3,6 +3,8 @@
 
 #include "src/luacpp_ctx.hpp"
 
+using namespace luacpp;
+
 /*
 template <>
 struct luacpp_usertype_method_loader<vec_sample> {

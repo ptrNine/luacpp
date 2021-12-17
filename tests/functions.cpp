@@ -4,6 +4,7 @@
 #include "luacpp_ctx.hpp"
 
 using namespace Catch::literals;
+using namespace luacpp;
 
 TEST_CASE("functions") {
     SECTION("no_arguments") {

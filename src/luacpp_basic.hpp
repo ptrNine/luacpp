@@ -4,6 +4,8 @@
 #include <string>
 #include <cstdint>
 
+namespace luacpp {
+
 template <char C>
 concept LuaValidNameChar = (C >= 'a' && C <= 'z') || (C >= 'A' && C <= 'Z') ||
                            (C >= '0' && C <= '9') || C == '_' || C == '.';
@@ -32,21 +34,6 @@ constexpr auto get(const lua_tname_divide_result_t<Success, T1, T2>&) {
         return T2{};
 }
 
-namespace std
-{
-template <bool Success, typename T1, typename T2>
-struct tuple_element<0, lua_tname_divide_result_t<Success, T1, T2>> {
-    using type = T1;
-};
-template <bool Success, typename T1, typename T2>
-struct tuple_element<1, lua_tname_divide_result_t<Success, T1, T2>> {
-    using type = T2;
-};
-template <bool Success, typename T1, typename T2>
-struct tuple_size<lua_tname_divide_result_t<Success, T1, T2>> {
-    static constexpr size_t value = 2;
-};
-} // namespace std
 
 template <bool Success, typename T1, typename T2>
 constexpr auto lua_tname_divide_result(T1, T2) {
@@ -126,15 +113,15 @@ struct lua_tname {
 
 #define LUA_TNAME(STR)                                                                                                 \
     []<size_t... Idxs>(std::index_sequence<Idxs...>) constexpr {                                                       \
-        return lua_tname<STR[Idxs]...>();                                                                              \
+        return luacpp::lua_tname<STR[Idxs]...>();                                                                      \
     }                                                                                                                  \
     (std::make_index_sequence<sizeof(STR) - 1>())
 
-//template <typename T, T... Cs>
-//constexpr lua_tname<Cs...> operator""_tname() { return {}; }
+// template <typename T, T... Cs>
+// constexpr lua_tname<Cs...> operator""_tname() { return {}; }
 
 template <typename Type, auto LuaName>
-struct luacpp_typespec {
+struct typespec {
     constexpr Type type() const;
     constexpr auto lua_name() const {
         return LuaName;
@@ -176,7 +163,7 @@ constexpr auto telement(std::tuple<ArgsT...>) {
 } // namespace details
 
 template <typename T>
-constexpr size_t luacpp_tuniqfind(auto&& f) {
+constexpr size_t tuniqfind(auto&& f) {
     return []<size_t... Idxs>(auto&& f, std::index_sequence<Idxs...>) {
         return ((f(details::telement<Idxs>(T{})) ? Idxs + size_t(1) : size_t(0)) + ... + size_t(0)) - size_t(1);
     }
@@ -184,25 +171,43 @@ constexpr size_t luacpp_tuniqfind(auto&& f) {
 }
 
 template <typename T>
-constexpr void luacpp_tforeach(auto&& f) {
+constexpr void tforeach(auto&& f) {
     []<typename... ArgsT>(auto&& f, std::tuple<ArgsT...>) {
         (f(ArgsT()), ...);
     }(f, T{});
 }
 
 template <size_t>
-struct luacpp_typespec_list_s;
+struct typespec_list_s;
 
 template <size_t tag>
-constexpr auto luacpp_typespec_list_get_type() {
-    if constexpr (requires { typename luacpp_typespec_list_s<tag>::type; })
-        return typename luacpp_typespec_list_s<tag>::type{};
+constexpr auto typespec_list_get_type() {
+    if constexpr (requires { typename typespec_list_s<tag>::type; })
+        return typename typespec_list_s<tag>::type{};
     else
         return std::tuple<>{};
 }
 
 template <size_t tag>
-using luacpp_typespec_list = decltype(luacpp_typespec_list_get_type<tag>());
+using typespec_list = decltype(typespec_list_get_type<tag>());
 
 template <typename T>
-struct luacpp_usertype_method_loader;
+struct usertype_method_loader;
+
+} // namespace luacpp
+
+namespace std
+{
+template <bool Success, typename T1, typename T2>
+struct tuple_element<0, luacpp::lua_tname_divide_result_t<Success, T1, T2>> {
+    using type = T1;
+};
+template <bool Success, typename T1, typename T2>
+struct tuple_element<1, luacpp::lua_tname_divide_result_t<Success, T1, T2>> {
+    using type = T2;
+};
+template <bool Success, typename T1, typename T2>
+struct tuple_size<luacpp::lua_tname_divide_result_t<Success, T1, T2>> {
+    static constexpr size_t value = 2;
+};
+} // namespace std
