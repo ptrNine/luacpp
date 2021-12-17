@@ -72,7 +72,6 @@ TEST_CASE("functions") {
             },
             [&](const type1& v) {
                 ++calls;
-                std::cout << std::get<0>(v[0]) << " " << std::get<1>(v[0])[0] << " " << std::get<1>(v[0])[1] << std::endl;
                 REQUIRE(v == type1{{{true, {"one", "two"}}, {false, {"three", "four"}}}});
             },
             [&](const type2& v) {
