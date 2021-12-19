@@ -11,6 +11,7 @@ add_executable(
     tests
     basic_types.cpp
     functions.cpp
+    usertypes.cpp
     )
 
 add_executable(benchmarks benchmarks.cpp)
