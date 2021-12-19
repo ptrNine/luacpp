@@ -1,5 +1,20 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/benchmark/catch_benchmark.hpp>
+
+#include "luacpp_basic.hpp"
+
+struct usertype1 {
+    usertype1 operator+(double iv) const {
+        return {v + iv};
+    }
+    double v;
+};
+
+template <>
+struct luacpp::typespec_list_s<0> {
+    using type = std::tuple<typespec<usertype1, LUA_TNAME("usertype1")>>;
+};
+
 #include "luacpp_ctx.hpp"
 
 using namespace luacpp;
@@ -39,6 +54,16 @@ end
 
 function overloaded5()
     return cpp_overloaded(true, false, true)
+end
+
+function commutative_mul()
+    v = usertype1.new(100) * 100
+    return 50 * v;
+end
+
+function commutative_add()
+    v = usertype1.new(100) + 100
+    return 50 + v;
 end
 )";
 
@@ -103,5 +128,27 @@ TEST_CASE("bidirectional_overloaded_call") {
     };
     BENCHMARK("double(bool, bool, bool)") {
         return overloaded5();
+    };
+}
+
+TEST_CASE("commutative_feature") {
+    auto l = luactx(lua_code{luacode});
+
+    l.provide(LUA_TNAME("usertype1.new"), [](double v) { return usertype1{v}; });
+    l.provide_member<usertype1>(
+        LUA_TNAME("__add"),
+        [](const usertype1& u, double v) { return u + v; },
+        [](double v, const usertype1& u) { return u + v; });
+    l.provide_commutative_op(LUA_TNAME("__mul"), &usertype1::operator+);
+
+    auto f1 = l.extract<void()>(LUA_TNAME("commutative_add"));
+    auto f2 = l.extract<void()>(LUA_TNAME("commutative_mul"));
+
+    BENCHMARK("commutative addition") {
+        return f1();
+    };
+
+    BENCHMARK("commutative addition (use feature)") {
+        return f2();
     };
 }

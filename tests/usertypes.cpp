@@ -25,6 +25,21 @@ struct vector3 {
     }
 
     template <typename U>
+    constexpr auto operator*(U n) const noexcept {
+        return vector3{x * n, y * n, z * n};
+    }
+
+    template <typename U>
+    friend constexpr auto operator*(U n, const vector3& vec) noexcept {
+        return vector3{vec.x * n, vec.y * n, vec.z * n};
+    }
+
+    template <typename U>
+    constexpr auto operator/(U n) const noexcept {
+        return vector3{x / n, y / n, z / n};
+    }
+
+    template <typename U>
     constexpr auto dot(const vector3<U>& v) const noexcept {
         return x * v.x + y * v.y + z * v.z;
     }
@@ -55,6 +70,7 @@ struct vector3 {
     T x, y, z;
 };
 
+
 #include "luacpp_basic.hpp"
 
 
@@ -84,15 +100,18 @@ void lua_setup_usertypes(luactx& l) {
 
     l.provide(
         LUA_TNAME("vec3.new"),
-        [] { return luavec3(); },
+        [] { return luavec3(0); },
         [](const luavec3& v) { return v; }, // deep-copy
         [](double v) { return luavec3(v); },
         [](double x, double y, double z) { return luavec3(x, y, z); });
 
     l.provide(LUA_TNAME("__add"), &luavec3::operator+<double>);
     l.provide(LUA_TNAME("__sub"), &luavec3::operator-<double>);
+    l.provide_commutative_op(LUA_TNAME("__mul"), &luavec3::operator*<double>);
+    l.provide(LUA_TNAME("__div"), &luavec3::operator/<double>);
     l.provide(LUA_TNAME("__eq"), &luavec3::operator==<double>);
     l.provide(LUA_TNAME("magnitude"), &luavec3::magnitude);
+    l.provide(LUA_TNAME("dot"), &luavec3::dot<double>);
     l.provide(LUA_TNAME("cross"), &luavec3::cross<double>);
     l.provide_member<luavec3>(LUA_TNAME("__tostring"), [](const luavec3& v) {
         return std::to_string(v.x) + " " + std::to_string(v.y) + " " + std::to_string(v.z);
@@ -100,36 +119,39 @@ void lua_setup_usertypes(luactx& l) {
 }
 
 auto code = R"(
-function check()
-    v1 = vec3.new()
-    v2 = vec3.new(2)
-    v3 = vec3.new(1, 2, 3)
-    v4 = vec3.new(v3);
-    v5 = v4:new();
+function test()
+    assert(vec3.new() == vec3.new(0))
+    assert(vec3.new(1) == vec3.new(1, 1, 1))
+    assert(vec3.new(1, 2, 3):new() == vec3.new(1, 2, 3))
 
-    assert(v3 == v4)
-    assert(v4 == v5)
+    assert(vec3.new(4, 2, -4):magnitude() == 6)
+    assert(vec3.new(-2, 4, 4):dot(vec3.new(2, -4, -4)) == -36)
+    assert(vec3.new(1, -2, 3):cross(vec3.new(-1, 2, 3)) == vec3.new(-12, -6, 0))
 
-    print(v1, v2, v3)
+    assert(vec3.new(1, 2, 3) * 4 == vec3.new(4, 8, 12))
+    assert(4 * vec3.new(1, 2, 3) == vec3.new(4, 8, 12))
+    assert(vec3.new(4, 8, 12) / 4 == vec3.new(1, 2, 3))
 
-    a1 = v1 + v3
-    a2 = v1 - v3
-    print(a1, a2)
+    assert(vec3.new(4, 0, 4) + vec3.new(0, -4, 0) == vec3.new(4, -4, 4))
+    assert(vec3.new(8, 10, 12) - vec3.new(0, 2, 4) == vec3.new(8))
 
-    a3 = v2 + v3
-    a4 = v2 - v3
-    print(a3, a4)
+    v1 = vec3.new(10, 20, 30)
+    assert(v1.x == 10)
+    v1.x = 1
+    assert(v1.x == 1)
 
-    print(v3:magnitude())
-    print(v3:cross(v3))
+    assert(v1.y == 20)
+    v1.y = 2
+    assert(v1.y == 2)
+
+    assert(v1.z == 30)
+    v1.z = 3
+    assert(v1.z == 3)
 end
 )";
 
 TEST_CASE("usertypes") {
     auto l = luactx(lua_code{code});
     lua_setup_usertypes(l);
-
-    SECTION("members") {
-        l.extract<void()>(LUA_TNAME("check"))();
-    }
+    l.extract<void()>(LUA_TNAME("test"))();
 }
