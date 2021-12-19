@@ -54,6 +54,9 @@ struct getter {
 
 template <typename T>
 struct setter {
+    setter() = default;
+    setter(auto f): func(f) {}
+
     void operator()(T& usertype_value, luactx& ctx) const {
         func(usertype_value, ctx);
     }
