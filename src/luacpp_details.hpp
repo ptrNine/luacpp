@@ -153,7 +153,7 @@ void luapush(lua_State* l, const LuaTupleLike auto& value) {
     (l, value, std::make_index_sequence<std::tuple_size_v<std::decay_t<decltype(value)>>>());
 }
 
-template <LuaRegisteredType T>
+template <typename T> requires LuaRegisteredType<std::decay_t<T>>
 std::decay_t<T>& luapush(lua_State* l, T&& value) {
     void*    p          = lua_newuserdata(l, sizeof(uint64_t) + sizeof(value));
     uint64_t type_index = type_registry::get_index<std::decay_t<T>>();
