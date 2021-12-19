@@ -6,6 +6,9 @@
 
 namespace luacpp {
 
+template<class... Ts> struct overloaded : Ts... { using Ts::operator()...; };
+template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
+
 template <char C>
 concept LuaValidNameChar = (C >= 'a' && C <= 'z') || (C >= 'A' && C <= 'Z') ||
                            (C >= '0' && C <= '9') || C == '_' || C == '.';

@@ -114,6 +114,34 @@ public:
         return luaprovide(NameT{}, l, std::forward<T>(value));
     }
 
+    template <typename NameT, typename F>
+    auto provide_commutative_op(NameT, F&& member_function) {
+        return overloaded{
+            []<typename ReturnT, typename ClassT, typename... ArgsT>(luactx& l, ReturnT(ClassT::*f)(ArgsT...)){
+                return l.provide_member<ClassT>(NameT{},
+                                                [f](ClassT& it, ArgsT... args) { return (it.*f)(args...); },
+                                                [f](ArgsT... args, ClassT& it) { return (it.*f)(args...); });
+            },
+            []<typename ReturnT, typename ClassT, typename... ArgsT>(
+                    luactx& l, ReturnT(ClassT::*f)(ArgsT...) noexcept){
+                return l.provide_member<ClassT>(NameT{},
+                                                [f](ClassT& it, ArgsT... args) { return (it.*f)(args...); },
+                                                [f](ArgsT... args, ClassT& it) { return (it.*f)(args...); });
+            },
+            []<typename ReturnT, typename ClassT, typename... ArgsT>(luactx& l, ReturnT(ClassT::*f)(ArgsT...) const){
+                return l.provide_member<ClassT>(NameT{},
+                                                [f](const ClassT& it, ArgsT... args) { return (it.*f)(args...); },
+                                                [f](ArgsT... args, const ClassT& it) { return (it.*f)(args...); });
+            },
+            []<typename ReturnT, typename ClassT, typename... ArgsT>(
+                    luactx& l, ReturnT(ClassT::*f)(ArgsT...) const noexcept) {
+                return l.provide_member<ClassT>(NameT{},
+                                                [f](const ClassT& it, ArgsT... args) { return (it.*f)(args...); },
+                                                [f](ArgsT... args, const ClassT& it) { return (it.*f)(args...); });
+            }
+        }(*this, member_function);
+    }
+
     template <typename NameT, typename F1, typename F2, typename... Fs>
     auto provide(NameT, F1&& function1, F2&& function2, Fs&&... functions) {
         if (generate_assist_file)
