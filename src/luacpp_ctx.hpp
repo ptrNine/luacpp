@@ -8,6 +8,10 @@ namespace luacpp {
 
 namespace errors
 {
+    class init_error : public std::runtime_error {
+    public:
+        init_error(const std::string& msg): std::runtime_error("Failed to initialize luajit: " + msg) {}
+    };
     class newstate_failed : public std::runtime_error {
     public:
         newstate_failed(): std::runtime_error("Failed to create lua state") {}
@@ -35,17 +39,43 @@ struct lua_code {
 
 class luactx {
 public:
+    static auto luacpp_close(luactx* l) {
+        return [l] {
+            if (l->l) {
+                lua_close(l->l);
+                l->l = nullptr;
+            }
+        };
+    }
+
     luactx(bool generate_assist = false): l(luaL_newstate()), generate_assist_file(generate_assist) {
         if (!l)
             throw errors::newstate_failed();
 
+        auto guard = exception_guard{luacpp_close(this)};
+
         luaL_openlibs(l);
 
+        if (!luaJIT_setmode(l, 0, LUAJIT_MODE_ENGINE | LUAJIT_MODE_ON))
+            throw errors::init_error("enabling jit failed");
+
         lua_pushlightuserdata(l, reinterpret_cast<void*>(&exception_wrapper)); // NOLINT
-        luaJIT_setmode(l, -1, LUAJIT_MODE_WRAPCFUNC | LUAJIT_MODE_ON);
+
+        if (!luaJIT_setmode(l, -1, LUAJIT_MODE_WRAPCFUNC | LUAJIT_MODE_ON))
+            throw errors::init_error("setting function wrapper failed");
         lua_pop(l, 1);
 
         //lua_atpanic(l, &panic_wrapper);
+
+        register_usertypes();
+    }
+
+    luactx(lua_State* state, bool generate_assist = false): l(state), generate_assist_file(generate_assist) {
+        lua_pushlightuserdata(l, reinterpret_cast<void*>(&exception_wrapper)); // NOLINT
+
+        if (!luaJIT_setmode(l, -1, LUAJIT_MODE_WRAPCFUNC | LUAJIT_MODE_ON))
+            throw errors::init_error("setting function wrapper failed");
+        lua_pop(l, 1);
 
         register_usertypes();
     }
@@ -65,6 +95,21 @@ public:
     //}
 
     luactx(const char* entry_file, bool generate_assist = false): luactx(generate_assist) {
+        auto guard = exception_guard{luacpp_close(this)};
+        load_and_call(entry_file);
+    }
+
+    luactx(const lua_code& code, bool generate_assist = false): luactx(generate_assist) {
+        auto guard = exception_guard{luacpp_close(this)};
+        load_and_call(code);
+    }
+
+    ~luactx() {
+        //lua_gc(l, LUA_GCCOLLECT, 0);
+        lua_close(l);
+    }
+
+    void load_and_call(const char* entry_file) {
         switch (luaL_loadfile(l, entry_file)) {
         case LUA_ERRSYNTAX:
             throw errors::syntax_error(lua_tostring(l, -1));
@@ -74,14 +119,10 @@ public:
             throw errors::cannot_open_file(entry_file);
         }
 
-        auto guard = exception_guard{[this] {
-            lua_close(l);
-        }};
-
         lua_call(l, 0, 0);
     }
 
-    luactx(const lua_code& code, bool generate_assist = false): luactx(generate_assist) {
+    void load_and_call(const lua_code& code) {
         switch (luaL_loadstring(l, code.code.data())) {
         case LUA_ERRSYNTAX:
             throw errors::syntax_error(lua_tostring(l, -1));
@@ -89,16 +130,7 @@ public:
             throw errors::memory_error();
         }
 
-        auto guard = exception_guard{[this] {
-            lua_close(l);
-        }};
-
         luacall(l, 0, 0);
-    }
-
-    ~luactx() {
-        //lua_gc(l, LUA_GCCOLLECT, 0);
-        lua_close(l);
     }
 
     [[nodiscard]]
