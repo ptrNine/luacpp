@@ -8,14 +8,17 @@ using namespace luacpp;
 TEST_CASE("functions") {
     SECTION("no_arguments") {
         auto l = luactx(lua_code{"function cppcall() cppfunc() end"});
+        auto top = l.top();
         bool called = false;
         l.provide(LUA_TNAME("cppfunc"), [&]{ called = true; });
         l.extract<void()>(LUA_TNAME("cppcall"))();
         REQUIRE(called);
+        REQUIRE(top == l.top());
     }
 
     SECTION("many_arguments") {
         auto l = luactx(lua_code{R"(function cppcall() cppfunc("a", "b", 1, 2, 3, 4, 5, 6, 7, true, false) end)"});
+        auto top = l.top();
         bool called = false;
         l.provide(
             LUA_TNAME("cppfunc"),
@@ -35,6 +38,7 @@ TEST_CASE("functions") {
             });
         l.extract<void()>(LUA_TNAME("cppcall"))();
         REQUIRE(called);
+        REQUIRE(top == l.top());
     }
 
     SECTION("overloaded") {
@@ -50,6 +54,7 @@ TEST_CASE("functions") {
         )";
         int calls = 0;
         auto l = luactx(lua_code{code});
+        auto top = l.top();
 
         using type1 = std::array<std::tuple<bool, std::array<std::string, 2>>, 2>;
         using type2 = std::array<std::tuple<bool, std::array<std::string, 2>>, 1>;
@@ -84,6 +89,8 @@ TEST_CASE("functions") {
             });
         l.extract<void()>(LUA_TNAME("cppcall"))();
         REQUIRE(calls == 6);
+
+        REQUIRE(top == l.top());
     }
 }
 
