@@ -1,3 +1,41 @@
+if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" OR CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    set(_cxx_flags
+        -fstrict-aliasing
+        -Wall
+        -Wextra
+        -Wpedantic
+        -Wcast-align
+        -Wconversion
+        -Wctor-dtor-privacy
+        -Wextra-semi
+        -Wfloat-equal
+        -Wnon-virtual-dtor
+        -Wold-style-cast
+        -Woverloaded-virtual
+        -Wredundant-decls
+        -Wsign-conversion
+        -Wsign-promo
+        -Werror=unused-result
+        -Wno-unused-function
+        -Wno-missing-braces
+    )
+
+    option(ENABLE_ASAN_FOR_TESTS "Enable address sanitizer in tests" ON)
+    if (ENABLE_ASAN_FOR_TESTS)
+        set(_asan_compile_flags -fsanitize=address -fno-omit-frame-pointer)
+        set(_asan_link_flags -fsanitize=address)
+    endif()
+
+    foreach(_flag ${_cxx_flags})
+        add_compile_options($<$<COMPILE_LANGUAGE:CXX>:${_flag}>)
+    endforeach()
+endif()
+
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(luajit REQUIRED luajit)
+
+git_submodule_update()
+
 git_submodule_build(Catch2
     CMAKE_ARGS
         -DCATCH_BUILD_TESTING=OFF
@@ -13,6 +51,11 @@ add_executable(
     functions.cpp
     usertypes.cpp
     )
+
+if (ENABLE_ASAN_FOR_TESTS)
+    target_compile_options(tests PUBLIC $<$<COMPILE_LANGUAGE:CXX>:${_asan_compile_flags}>)
+    target_link_options(tests PUBLIC $<$<COMPILE_LANGUAGE:CXX>:${_asan_link_flags}>)
+endif()
 
 add_executable(benchmarks benchmarks.cpp)
 
