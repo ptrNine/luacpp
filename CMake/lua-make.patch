@@ -1,0 +1,66 @@
+diff --git a/makefile b/makefile
+index d46e650c..9f82916e 100644
+--- a/makefile
++++ b/makefile
+@@ -3,6 +3,30 @@
+ 
+ # == CHANGE THE SETTINGS BELOW TO SUIT YOUR ENVIRONMENT =======================
+ 
++export PREFIX= /usr/local
++export MULTILIB= lib
++
++define TMP_PKGCONGIF
++prefix=$(PREFIX)
++multilib=lib
++exec_prefix=${prefix}
++libdir=${exec_prefix}/${multilib}
++libname=lua
++includedir=${prefix}/include/lua
++
++Name: Lua
++Description: Lua library
++Version: 5
++Libs: -L${libdir} -l${libname}
++Libs.private: -Wl,-E -lm -ldl
++Cflags: -I${includedir}
++endef
++
++DPREFIX= $(DESTDIR)$(PREFIX)
++INSTALL_LIB= $(DPREFIX)/$(MULTILIB)
++INSTALL_INC= $(DPREFIX)/include/lua
++INSTALL_DIRS= $(INSTALL_LIB) $(INSTALL_INC)
++
+ # Warnings valid for both C and C++
+ CWARNSCPP= \
+ 	-Wfatal-errors \
+@@ -92,11 +116,10 @@ AUX_O=	lauxlib.o
+ LIB_O=	lbaselib.o ldblib.o liolib.o lmathlib.o loslib.o ltablib.o lstrlib.o \
+ 	lutf8lib.o loadlib.o lcorolib.o linit.o
+ 
+-LUA_T=	lua
+ LUA_O=	lua.o
+ 
+ 
+-ALL_T= $(CORE_T) $(LUA_T)
++ALL_T= $(CORE_T)
+ ALL_O= $(CORE_O) $(LUA_O) $(AUX_O) $(LIB_O)
+ ALL_A= $(CORE_T)
+ 
+@@ -111,9 +134,14 @@ $(CORE_T): $(CORE_O) $(AUX_O) $(LIB_O)
+ 	$(AR) $@ $?
+ 	$(RANLIB) $@
+ 
+-$(LUA_T): $(LUA_O) $(CORE_T)
+-	$(CC) -o $@ $(MYLDFLAGS) $(LUA_O) $(CORE_T) $(LIBS) $(MYLIBS) $(DL)
+-
++export TMP_PKGCONGIF
++install: $(CORE_T)
++	mkdir -p $(INSTALL_DIRS)
++	mkdir -p $(INSTALL_INC)/lua
++	mkdir -p $(INSTALL_LIB)/pkgconfig
++	install -m 0644 $(CORE_T) $(INSTALL_LIB)/$(CORE_T)
++	install -m 0644 *.h $(INSTALL_INC)/lua
++	@echo "$$TMP_PKGCONGIF" > $(INSTALL_LIB)/pkgconfig/lua.pc
+ 
+ clean:
+ 	$(RM) $(ALL_T) $(ALL_O)

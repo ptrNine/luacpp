@@ -1,3 +1,6 @@
+set(LUA_VARIANT "luajit" CACHE STRING "Lua variant, can be lua or luajit")
+set(LUA_GIT_VERSION "v2.1" CACHE STRING "Lua version from git repository")
+
 if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" OR CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     set(_cxx_flags
         -fstrict-aliasing
@@ -31,19 +34,24 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" OR CMAKE_CXX_COMPILER_ID STREQUAL "GN
     endforeach()
 endif()
 
-find_package(PkgConfig REQUIRED)
-pkg_check_modules(luajit REQUIRED luajit)
 
 git_submodule_update()
-
 git_submodule_build(Catch2
     CMAKE_ARGS
         -DCATCH_BUILD_TESTING=OFF
         -DCATCH_INSTALL_DOCS=OFF
         -DCATCH_INSTALL_EXTRAS=OFF
-        )
+)
+
+if (LUA_VARIANT STREQUAL "lua")
+    set(_patch "CMake/lua-make.patch")
+endif()
+
+git_submodule_make_build(${LUA_VARIANT} GIT_VERSION ${LUA_GIT_VERSION} PATCHES ${_patch})
 
 find_package(Catch2 REQUIRED)
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(${LUA_VARIANT} REQUIRED ${LUA_VARIANT})
 
 add_executable(
     tests
@@ -61,13 +69,13 @@ add_executable(benchmarks benchmarks.cpp)
 
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/submodules/Catch2/extras)
 
-target_include_directories(tests PUBLIC ${luajit_INCLUDE_DIRS})
+target_include_directories(tests PUBLIC ${${LUA_VARIANT}_INCLUDE_DIRS})
 target_include_directories(tests PUBLIC ${CMAKE_SOURCE_DIR}/src)
-target_link_libraries(tests ${luajit_LIBRARIES} Catch2::Catch2WithMain)
+target_link_libraries(tests ${${LUA_VARIANT}_LIBRARIES} Catch2::Catch2WithMain)
 
-target_include_directories(benchmarks PUBLIC ${luajit_INCLUDE_DIRS})
+target_include_directories(benchmarks PUBLIC ${${LUA_VARIANT}_INCLUDE_DIRS})
 target_include_directories(benchmarks PUBLIC ${CMAKE_SOURCE_DIR}/src)
-target_link_libraries(benchmarks ${luajit_LIBRARIES} Catch2::Catch2WithMain)
+target_link_libraries(benchmarks ${${LUA_VARIANT}_LIBRARIES} Catch2::Catch2WithMain)
 
 include(CTest)
 include(Catch)

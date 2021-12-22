@@ -53,6 +53,70 @@ macro(git_submodule_build _project_name)
 
 endmacro()
 
+macro(git_submodule_make_build _project_name)
+    if (NOT ${_project_name}_ALREADY_BUILT)
+        message("-- Build submodule '${_project_name}' at ${CMAKE_SOURCE_DIR}/submodules/${_project_name}")
+
+        set(oneValueArgs GIT_VERSION)
+        set(multiValueArgs PATCHES)
+        cmake_parse_arguments(${_project_name} "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
+
+        # Checkout specified version
+        execute_process(COMMAND git checkout "${${_project_name}_GIT_VERSION}"
+                RESULT_VARIABLE result
+                WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/submodules/${_project_name}"
+        )
+
+        # Apply patches
+        foreach(_patch ${${_project_name}_PATCHES})
+            message("-- Apply patch ${_patch} for ${_project_name} submodule")
+            execute_process(COMMAND git apply "${CMAKE_SOURCE_DIR}/${_patch}"
+                WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/submodules/${_project_name}")
+        endforeach()
+
+        if (${_project_name}_PATCHES)
+            execute_process(
+                COMMAND
+                    git commit --all --no-edit --no-gpg-sign -m "Patched from cmake"
+                    --author="CMake Build <no@email>"
+                RESULT_VARIABLE result
+                WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/submodules/${_project_name}")
+            if (result)
+                message(WARNING "Can't commit changes in submodule ${_project_name}")
+            endif()
+        endif()
+
+        if(result)
+            message(FATAL_ERROR "Failed to checkout version ${${_project_name}_GIT_VERSION} ${_project_name}")
+        endif()
+
+        file(GLOB ${_project_name}_files "${CMAKE_SOURCE_DIR}/submodules/${_project_name}/*")
+        file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/submodules/${_project_name}")
+
+        foreach(_file ${${_project_name}_files})
+            if(NOT "${_file}" MATCHES "/\.git$")
+                file(COPY ${_file} DESTINATION "${CMAKE_BINARY_DIR}/submodules/${_project_name}")
+            endif()
+        endforeach()
+
+        if(DEFINED MAKE_NPROCS)
+            set(MAKE_ARGS "-j${MAKE_NPROCS}")
+        endif()
+
+        set(ENV{CC} "${CMAKE_C_COMPILER}")
+        execute_process(COMMAND make ${MAKE_ARGS} install DESTDIR="${CMAKE_BINARY_DIR}/3rd" PREFIX=
+                RESULT_VARIABLE result
+                WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/submodules/${_project_name}
+        )
+        if(result)
+            message(FATAL_ERROR "CMake step for ${_project_name} failed: ${result}")
+        endif()
+
+        set(${_project_name}_ALREADY_BUILT ON CACHE STRING "Is submodule already built")
+    else()
+        message("-- Submodule '${_project_name}' at ${CMAKE_SOURCE_DIR}/submodules/${_project_name} already build")
+    endif()
+endmacro()
 
 macro(git_submodule_copy_files _project_name)
     set(options NO_NAME_INCLUDE)
