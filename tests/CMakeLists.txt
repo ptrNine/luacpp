@@ -69,11 +69,12 @@ add_executable(benchmarks benchmarks.cpp)
 
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/submodules/Catch2/extras)
 
-target_include_directories(tests PUBLIC ${${LUA_VARIANT}_INCLUDE_DIRS})
+# TODO: provide valid prefix to pkgconfig file
+target_include_directories(tests PUBLIC "${CMAKE_BINARY_DIR}/3rd/${${LUA_VARIANT}_INCLUDE_DIRS}")
 target_include_directories(tests PUBLIC ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(tests ${${LUA_VARIANT}_LIBRARIES} Catch2::Catch2WithMain)
 
-target_include_directories(benchmarks PUBLIC ${${LUA_VARIANT}_INCLUDE_DIRS})
+target_include_directories(benchmarks PUBLIC "${CMAKE_BINARY_DIR}/3rd/${${LUA_VARIANT}_INCLUDE_DIRS}")
 target_include_directories(benchmarks PUBLIC ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(benchmarks ${${LUA_VARIANT}_LIBRARIES} Catch2::Catch2WithMain)
 
