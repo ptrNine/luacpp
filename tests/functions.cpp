@@ -117,7 +117,7 @@ TEST_CASE("functions_error_conditions") {
     bool catched = false;
     try {
         l.extract<void()>(LUA_TNAME("call0"))();
-    } catch (...) {
+    } catch (const std::exception&) {
         catched = true;
     }
     REQUIRE(catched);
@@ -127,7 +127,7 @@ TEST_CASE("functions_error_conditions") {
     try {
         l.extract<void()>(LUA_TNAME("call2"))();
     }
-    catch (...) {
+    catch (const std::exception&) {
         catched = true;
     }
     REQUIRE(catched);
@@ -137,7 +137,7 @@ TEST_CASE("functions_error_conditions") {
     try {
         l.extract<void()>(LUA_TNAME("call3"))();
     }
-    catch (...) {
+    catch (const std::exception&) {
         catched = true;
     }
     REQUIRE(catched);
@@ -149,7 +149,7 @@ TEST_CASE("functions_error_conditions") {
     try {
         l.extract<void()>(LUA_TNAME("call4"))();
     }
-    catch (...) {
+    catch (const std::exception&) {
         catched = true;
     }
     REQUIRE(catched);
