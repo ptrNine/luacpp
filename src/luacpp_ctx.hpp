@@ -56,43 +56,17 @@ public:
 
         luaL_openlibs(l);
 
+#ifdef WITH_LUAJIT
         if (!luaJIT_setmode(l, 0, LUAJIT_MODE_ENGINE | LUAJIT_MODE_ON))
             throw errors::init_error("enabling jit failed");
-
-        lua_pushlightuserdata(l, reinterpret_cast<void*>(&exception_wrapper)); // NOLINT
-
-        if (!luaJIT_setmode(l, -1, LUAJIT_MODE_WRAPCFUNC | LUAJIT_MODE_ON))
-            throw errors::init_error("setting function wrapper failed");
-        lua_pop(l, 1);
-
-        //lua_atpanic(l, &panic_wrapper);
+#endif
 
         register_usertypes();
     }
 
     luactx(lua_State* state, bool generate_assist = false): l(state), generate_assist_file(generate_assist) {
-        lua_pushlightuserdata(l, reinterpret_cast<void*>(&exception_wrapper)); // NOLINT
-
-        if (!luaJIT_setmode(l, -1, LUAJIT_MODE_WRAPCFUNC | LUAJIT_MODE_ON))
-            throw errors::init_error("setting function wrapper failed");
-        lua_pop(l, 1);
-
         register_usertypes();
     }
-
-    static int exception_wrapper(lua_State* l, lua_CFunction f) {
-        try {
-            return f(l);
-        } catch (const std::exception& e) {
-            lua_pushstring(l, e.what());
-        }
-        return lua_error(l);
-    }
-
-    //static int panic_wrapper(lua_State* l) {
-    //    std::cerr << lua_tostring(l, -1) << std::endl;
-    //    std::abort();
-    //}
 
     luactx(const char* entry_file, bool generate_assist = false): luactx(generate_assist) {
         auto guard = exception_guard{luacpp_close(this)};
@@ -106,10 +80,21 @@ public:
 
     ~luactx() {
         //lua_gc(l, LUA_GCCOLLECT, 0);
-        lua_close(l);
+        if (l)
+            lua_close(l);
     }
 
     void load_and_call(const char* entry_file) {
+        load(entry_file);
+        call();
+    }
+
+    void load_and_call(const lua_code& code) {
+        load(code);
+        call();
+    }
+
+    void load(const char* entry_file) {
         switch (luaL_loadfile(l, entry_file)) {
         case LUA_ERRSYNTAX:
             throw errors::syntax_error(lua_tostring(l, -1));
@@ -118,19 +103,19 @@ public:
         case LUA_ERRFILE:
             throw errors::cannot_open_file(entry_file);
         }
-
-        lua_call(l, 0, 0);
     }
 
-    void load_and_call(const lua_code& code) {
+    void load(const lua_code& code) {
         switch (luaL_loadstring(l, code.code.data())) {
         case LUA_ERRSYNTAX:
             throw errors::syntax_error(lua_tostring(l, -1));
         case LUA_ERRMEM:
             throw errors::memory_error();
         }
+    }
 
-        luacall(l, 0, 0);
+    void call() {
+        lua_call(l, 0, 0);
     }
 
     [[nodiscard]]

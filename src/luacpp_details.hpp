@@ -498,7 +498,12 @@ struct func_storage {
     }
 
     int call(lua_State* state) const {
-        return f(state, *rf);
+        try {
+            return f(state, *rf);
+        } catch (const std::exception& e) {
+            luaL_error(state, e.what());
+            return 0;
+        }
     }
 
     F                 f;
@@ -513,7 +518,12 @@ struct overloaded_func_storage {
     }
 
     int call(lua_State* state) const {
-        return std::apply(f, std::tuple_cat(std::tuple{state}, *rfs));
+        try {
+            return std::apply(f, std::tuple_cat(std::tuple{state}, *rfs));
+        } catch (const std::exception& e) {
+            luaL_error(state, e.what());
+            return 0;
+        }
     }
 
     F                                 f;
@@ -1063,14 +1073,30 @@ int luaaccess(TName name, lua_State* l, int stack_depth = 0) {
         static_assert(dotsplit.left().size() > 0, "Attempt to access lua variable with empty name");
 
         ++stack_depth;
+
+#if (LUA_VERSION_NUM < 502)
         lua_getfield(l, stack_depth == 1 ? LUA_GLOBALSINDEX : -1, dotsplit.left().data());
+#else
+        if (stack_depth == 1)
+            lua_getglobal(l, dotsplit.left().data());
+        else
+            lua_getfield(l, -1, dotsplit.left().data());
+#endif
+
         guard.dismiss();
         return luaaccess(dotsplit.right(), l, stack_depth);
     }
     else {
         static_assert(name.size() > 0, "Attempt to access lua variable with empty name");
         ++stack_depth;
+#if (LUA_VERSION_NUM < 502)
         lua_getfield(l, stack_depth == 1 ? LUA_GLOBALSINDEX : -1, name.data());
+#else
+        if (stack_depth == 1)
+            lua_getglobal(l, name.data());
+        else
+            lua_getfield(l, -1, name.data());
+#endif
         return stack_depth;
     }
 }

@@ -1,8 +1,19 @@
 #pragma once
 
-#include <lua.hpp>
+#ifdef WITH_LUAJIT
+    #include "lua.hpp"
+#else
+    #include "lua.h"
+    #include "lauxlib.h"
+    #include "lualib.h"
+#endif
+
 #include <stdexcept>
 #include "luacpp_utils.hpp"
+
+#if LUA_VERSION_NUM >= 502
+    #define lua_objlen(state, idx) lua_rawlen(state, idx)
+#endif
 
 namespace luacpp
 {

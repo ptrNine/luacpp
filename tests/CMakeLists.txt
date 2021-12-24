@@ -46,6 +46,9 @@ git_submodule_build(Catch2
 if (LUA_VARIANT STREQUAL "lua")
     set(_patch "CMake/lua-make.patch")
 endif()
+if (LUA_VARIANT STREQUAL "luajit")
+    add_compile_definitions(WITH_LUAJIT)
+endif()
 
 git_submodule_make_build(${LUA_VARIANT} GIT_VERSION ${LUA_GIT_VERSION} PATCHES ${_patch})
 
