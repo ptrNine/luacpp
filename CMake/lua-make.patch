@@ -10,19 +10,19 @@ index d46e650c..9f82916e 100644
 +export MULTILIB= lib
 +
 +define TMP_PKGCONGIF
-+prefix=$(PREFIX)
++prefix=${PREFIX}
 +multilib=lib
-+exec_prefix=${prefix}
-+libdir=${exec_prefix}/${multilib}
++exec_prefix=$${prefix}
++libdir=$${exec_prefix}/$${multilib}
 +libname=lua
-+includedir=${prefix}/include/lua
++includedir=$${prefix}/include/lua
 +
 +Name: Lua
 +Description: Lua library
 +Version: 5
-+Libs: -L${libdir} -l${libname}
++Libs: -L$${libdir} -l$${libname} -ldl
 +Libs.private: -Wl,-E -lm -ldl
-+Cflags: -I${includedir}
++Cflags: -I$${includedir}
 +endef
 +
 +DPREFIX= $(DESTDIR)$(PREFIX)
@@ -33,6 +33,15 @@ index d46e650c..9f82916e 100644
  # Warnings valid for both C and C++
  CWARNSCPP= \
  	-Wfatal-errors \
+@@ -71,7 +71,7 @@ MYLDFLAGS= $(LOCAL) -Wl,-E
+ MYLIBS= -ldl -lreadline
+ 
+ 
+-CC= gcc
++CC= g++
+ CFLAGS= -Wall -O2 $(MYCFLAGS) -fno-stack-protector -fno-common -march=native
+ AR= ar rc
+ RANLIB= ranlib
 @@ -92,11 +116,10 @@ AUX_O=	lauxlib.o
  LIB_O=	lbaselib.o ldblib.o liolib.o lmathlib.o loslib.o ltablib.o lstrlib.o \
  	lutf8lib.o loadlib.o lcorolib.o linit.o
@@ -59,7 +68,7 @@ index d46e650c..9f82916e 100644
 +	mkdir -p $(INSTALL_INC)/lua
 +	mkdir -p $(INSTALL_LIB)/pkgconfig
 +	install -m 0644 $(CORE_T) $(INSTALL_LIB)/$(CORE_T)
-+	install -m 0644 *.h $(INSTALL_INC)/lua
++	install -m 0644 *.h $(INSTALL_INC)/
 +	@echo "$$TMP_PKGCONGIF" > $(INSTALL_LIB)/pkgconfig/lua.pc
  
  clean:
