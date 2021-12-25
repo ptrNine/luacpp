@@ -119,7 +119,7 @@ public:
     }
 
     void call() {
-        lua_call(l, 0, 0);
+        luacall(l, 0, 0);
     }
 
     [[nodiscard]]
