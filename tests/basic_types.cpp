@@ -344,4 +344,20 @@ TEST_CASE("basic_types") {
 
         REQUIRE(top == l.top());
     }
+
+    SECTION("nested tables") {
+        auto l = luactx(lua_code{
+                "function test1() return a.d end\n"
+                "function test2() return a.b.c end\n"
+                "t = { a = \"its t.a\" }\n"
+                "function test3() return t.a .. t.b.c end\n"});
+
+        l.provide(LUA_TNAME("a.b.c"), "a.b.c");
+        l.provide(LUA_TNAME("a.d"), 200);
+        l.provide(LUA_TNAME("t.b.c"), " and t.b.c");
+
+        REQUIRE(l.extract<int()>(LUA_TNAME("test1"))() == 200);
+        REQUIRE(l.extract<std::string()>(LUA_TNAME("test2"))() == "a.b.c");
+        REQUIRE(l.extract<std::string()>(LUA_TNAME("test3"))() == "its t.a and t.b.c");
+    }
 }
