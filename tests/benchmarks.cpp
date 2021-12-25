@@ -296,7 +296,7 @@ TEST_CASE("nbody") {
     auto l = luactx(lua_code{nbody});
     auto f = l.extract<std::pair<double, double>(double)>(LUA_TNAME("nbody_run"));
 
-    BENCHMARK("nbody (N == 50000000)") {
-        return f(50000000);
+    BENCHMARK("nbody (N == 100000)") {
+        return f(100000);
     };
 }
