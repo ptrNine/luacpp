@@ -38,7 +38,7 @@ index d46e650c..9f82916e 100644
  
  
 -CC= gcc
-+CC= g++
++CC= @CMAKE_C_COMPILER@
  CFLAGS= -Wall -O2 $(MYCFLAGS) -fno-stack-protector -fno-common -march=native
  AR= ar rc
  RANLIB= ranlib

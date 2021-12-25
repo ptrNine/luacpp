@@ -67,10 +67,23 @@ macro(git_submodule_make_build _project_name)
                 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/submodules/${_project_name}"
         )
 
+        if(result)
+            message(FATAL_ERROR "Failed to checkout version ${${_project_name}_GIT_VERSION} ${_project_name}")
+        endif()
+
         # Apply patches
         foreach(_patch ${${_project_name}_PATCHES})
-            message("-- Apply patch ${_patch} for ${_project_name} submodule")
-            execute_process(COMMAND git apply "${CMAKE_SOURCE_DIR}/${_patch}"
+            if ("${_patch}" MATCHES "\.in$")
+                string(REPLACE ".in" "" _patch "${_patch}")
+                configure_file("${CMAKE_SOURCE_DIR}/${_patch}.in" "${CMAKE_BINARY_DIR}/${_patch}")
+                set(_patch_path "${CMAKE_BINARY_DIR}/${_patch}")
+            else()
+                set(_patch_path "${CMAKE_SOURCE_DIR}/${_patch}")
+            endif()
+
+            message("-- Apply patch ${_patch_path} for ${_project_name} submodule")
+
+            execute_process(COMMAND git apply "${_patch_path}"
                 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/submodules/${_project_name}")
         endforeach()
 
@@ -84,10 +97,6 @@ macro(git_submodule_make_build _project_name)
             if (result)
                 message(WARNING "Can't commit changes in submodule ${_project_name}")
             endif()
-        endif()
-
-        if(result)
-            message(FATAL_ERROR "Failed to checkout version ${${_project_name}_GIT_VERSION} ${_project_name}")
         endif()
 
         file(GLOB ${_project_name}_files "${CMAKE_SOURCE_DIR}/submodules/${_project_name}/*")

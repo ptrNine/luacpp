@@ -3,9 +3,11 @@
 #ifdef WITH_LUAJIT
     #include "lua.hpp"
 #else
+extern "C" {
     #include "lua.h"
     #include "lauxlib.h"
     #include "lualib.h"
+}
 #endif
 
 #include <stdexcept>
