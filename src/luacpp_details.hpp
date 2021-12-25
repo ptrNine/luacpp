@@ -14,7 +14,19 @@ namespace luacpp
 {
 
 template <typename T>
-concept LuaNumber = (std::is_integral_v<T> || std::is_floating_point_v<T>)&&!std::same_as<T, bool>;
+concept LuaFloat = std::is_floating_point_v<T>;
+
+template <typename T>
+concept LuaFloatOrRef = LuaFloat<std::decay_t<T>>;
+
+template <typename T>
+concept LuaInteger = std::is_integral_v<T> && !std::same_as<T, bool>;
+
+template <typename T>
+concept LuaIntegerOrRef = LuaInteger<std::decay_t<T>>;
+
+template <typename T>
+concept LuaNumber = LuaInteger<T> || LuaFloat<T>;
 
 template <typename T>
 concept LuaNumberOrRef = LuaNumber<std::decay_t<T>>;
@@ -94,7 +106,15 @@ inline void luapush(lua_State* l, T value) {
     lua_pushboolean(l, value);
 }
 
+#if LUA_VERSION_NUM >= 503
+void luapush(lua_State* l, LuaInteger auto value) {
+    lua_pushinteger(l, lua_Integer(value));
+}
+
+void luapush(lua_State* l, LuaFloat auto value) {
+#else
 void luapush(lua_State* l, LuaNumber auto value) {
+#endif
     lua_pushnumber(l, lua_Number(value));
 }
 
@@ -224,8 +244,14 @@ bool luacheck(lua_State* l, int idx) {
 
 template <LuaNumberOrRef T>
 auto luaget(lua_State* l, int idx) {
-    if (lua_isnumber(l, idx))
-        return std::decay_t<T>(lua_tonumber(l, idx));
+    if (lua_isnumber(l, idx)) {
+#if LUA_VERSION_NUM >= 503
+        if constexpr (LuaIntegerOrRef<T>)
+            return std::decay_t<T>(lua_tointeger(l, idx));
+        if constexpr (LuaFloatOrRef<T>)
+#endif
+            return std::decay_t<T>(lua_tonumber(l, idx));
+    }
     else
         throw errors::cast_error(l, idx, "this type can't be casted to C++ number", __PRETTY_FUNCTION__);
 }
