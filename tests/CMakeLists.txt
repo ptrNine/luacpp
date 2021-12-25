@@ -56,6 +56,14 @@ find_package(Catch2 REQUIRED)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(${LUA_VARIANT} REQUIRED ${LUA_VARIANT})
 
+if (LUA_VARIANT STREQUAL "luajit")
+    foreach (_lib "${${LUA_VARIANT}_LIBRARIES}")
+        list(APPEND _libs "${_lib}.a")
+    endforeach()
+    list(APPEND _libs "dl")
+    set(${LUA_VARIANT}_LIBRARIES "${_libs}")
+endif()
+
 add_executable(
     tests
     basic_types.cpp
