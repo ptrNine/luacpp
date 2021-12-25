@@ -43,6 +43,17 @@ concept LuaTupleLike = requires {
 };
 
 template <typename T>
+concept LuaOptionalLike = !std::is_pointer_v<T> && requires (T v) {
+    {*v};
+    {v.value()};
+    {v.reset()};
+    {v.has_value()} -> std::convertible_to<bool>;
+};
+
+template <typename T>
+concept LuaOptionalLikeOrRef = LuaOptionalLike<std::decay_t<T>>;
+
+template <typename T>
 concept LuaTupleLikeOrRef = LuaTupleLike<std::decay_t<T>>;
 
 template <typename T>
@@ -79,7 +90,11 @@ concept LuaStaticSettable = !LuaTupleLike<T> && !LuaStringLike<T> && !LuaPushBac
 template <typename T>
 concept LuaStaticSettableOrRef = LuaStaticSettable<std::decay_t<T>>;
 
+
 /* Forward declarations */
+
+void luapush(lua_State* l, const LuaOptionalLike auto& value);
+
 void luapush(lua_State* l, const LuaListLike auto& value);
 
 void luapush(lua_State* l, const LuaTupleLike auto& value);
@@ -100,12 +115,20 @@ bool luacheck(lua_State* l, int idx);
 template <LuaTupleLikeOrRef T>
 bool luacheck(lua_State* l, int idx);
 
-template <typename T>
-    requires std::same_as<T, bool>
-inline void luapush(lua_State* l, T value) {
+
+/* Push functions */
+
+/* Argument placeholder
+ * Takes space in the argument list, but never be actually pushed
+ */
+struct placeholder {};
+inline void luapush(lua_State*, placeholder) {}
+
+inline void luapush(lua_State* l, std::type_identity_t<bool> value) {
     lua_pushboolean(l, value);
 }
 
+/* Use lua_Integer if lua version >= 5.3 */
 #if LUA_VERSION_NUM >= 503
 void luapush(lua_State* l, LuaInteger auto value) {
     lua_pushinteger(l, lua_Integer(value));
@@ -118,21 +141,19 @@ void luapush(lua_State* l, LuaNumber auto value) {
     lua_pushnumber(l, lua_Number(value));
 }
 
+/* String-literal (decltype("")) overload */
 template <size_t S>
 void luapush(lua_State* l, const char (&value)[S]) {
     lua_pushlstring(l, value, S - 1);
 }
 
+/* C-string */
 inline void luapush(lua_State* l, const char* value) {
     if (!value)
         lua_pushnil(l);
     else
         lua_pushstring(l, value);
 }
-
-struct placeholder {};
-
-inline void luapush(lua_State*, placeholder) {}
 
 inline void luapush(lua_State* l, std::nullptr_t) {
     lua_pushnil(l);
@@ -147,6 +168,13 @@ void luapush(lua_State* l, const auto* pointer_value) {
         lua_pushnil(l);
     else
         luapush(l, *pointer_value);
+}
+
+void luapush(lua_State* l, const LuaOptionalLike auto& value) {
+    if (!value)
+        lua_pushnil(l);
+    else
+        luapush(l, *value);
 }
 
 void luapush(lua_State* l, const LuaListLike auto& value) {
@@ -186,9 +214,7 @@ std::decay_t<T>& luapush(lua_State* l, T&& value) {
     return *ptr;
 }
 
-template <typename T>
-    requires std::same_as<T, lua_CFunction>
-inline void luapush(lua_State* l, T value) {
+inline void luapush(lua_State* l, lua_CFunction value) {
     lua_pushcfunction(l, value);
 }
 
@@ -207,20 +233,19 @@ namespace errors
     };
 } // namespace errors
 
-struct anycasted {
-public:
-    template <typename T>
-    operator T() const {
-        return T{};
-    }
-};
+/* Get/Check functions
+ * Get function gets the value from stack by specified index
+ * Check function checks if the value can be converted to the specified type
+ */
 
+/* Does not really retrieve anything */
 template <typename T>
     requires std::same_as<std::decay_t<T>, placeholder>
 auto luaget(lua_State*, int) {
     return placeholder{};
 }
 
+/* Any value from the stack can be converted to the placeholder */
 template <typename T>
     requires std::same_as<std::decay_t<T>, placeholder>
 bool luacheck(lua_State*, int) {
@@ -230,7 +255,7 @@ bool luacheck(lua_State*, int) {
 template <typename T>
     requires std::same_as<std::decay_t<T>, bool>
 auto luaget(lua_State* l, int idx) {
-    if (lua_isboolean(l, idx))
+    if (lua_type(l, idx) == LUA_TBOOLEAN)
         return lua_toboolean(l, idx);
     else
         throw errors::cast_error(l, idx, "this type can't be casted to C++ bool", __PRETTY_FUNCTION__);
@@ -239,12 +264,13 @@ auto luaget(lua_State* l, int idx) {
 template <typename T>
     requires std::same_as<std::decay_t<T>, bool>
 bool luacheck(lua_State* l, int idx) {
-    return lua_isboolean(l, idx);
+    return lua_type(l, idx) == LUA_TBOOLEAN;
 }
 
 template <LuaNumberOrRef T>
 auto luaget(lua_State* l, int idx) {
-    if (lua_isnumber(l, idx)) {
+    if (lua_type(l, idx) == LUA_TNUMBER) {
+/* Handle integers in lua >= 5.3 */
 #if LUA_VERSION_NUM >= 503
         if constexpr (LuaIntegerOrRef<T>)
             return std::decay_t<T>(lua_tointeger(l, idx));
@@ -256,15 +282,31 @@ auto luaget(lua_State* l, int idx) {
         throw errors::cast_error(l, idx, "this type can't be casted to C++ number", __PRETTY_FUNCTION__);
 }
 
+/* XXX: this check returns true on any numbers (float/integer)
+ * This mean that the overloading by integer/float does not work
+ */
 template <LuaNumberOrRef T>
 bool luacheck(lua_State* l, int idx) {
-    return lua_isnumber(l, idx);
+    return lua_type(l, idx) == LUA_TNUMBER;
+}
+
+template <LuaOptionalLikeOrRef T>
+auto luaget(lua_State* l, int idx) {
+    if (lua_type(l, idx) == LUA_TNIL)
+        return std::decay_t<T>{};
+    else
+        return std::decay_t<T>{luaget<std::decay_t<decltype(*T{})>>(l, idx)};
+}
+
+template <LuaOptionalLikeOrRef T>
+bool luacheck(lua_State* l, int idx) {
+    return lua_type(l, idx) == LUA_TNIL || luacheck<std::decay_t<decltype(*T{})>>(l, idx);
 }
 
 template <typename T>
     requires std::same_as<std::decay_t<T>, std::string>
 auto luaget(lua_State* l, int idx) {
-    if (lua_isstring(l, idx)) {
+    if (lua_type(l, idx) == LUA_TSTRING) {
         size_t len;
         auto   str = lua_tolstring(l, idx, &len);
         return std::string(str, len);
@@ -273,18 +315,18 @@ auto luaget(lua_State* l, int idx) {
         throw errors::cast_error(l, idx, "this type can't be casted to C++ std::string", __PRETTY_FUNCTION__);
 }
 
+
 template <typename T>
     requires std::same_as<std::decay_t<T>, std::string>
 bool luacheck(lua_State* l, int idx) {
-    /* Disable implicit number-to-string casting for proper overload resolution */
-    return lua_isstring(l, idx) && !lua_isnumber(l, idx);
+    return lua_type(l, idx) == LUA_TSTRING;
 }
 
 namespace details
 {
     template <typename T>
     auto _array_getnext(lua_State* l, int index_check) {
-        if (!lua_isnumber(l, -2))
+        if (lua_type(l, -2) != LUA_TNUMBER)
             throw errors::cast_error(l, -3, "some key of lua table is not a number", __PRETTY_FUNCTION__);
 
         auto idx = int(lua_tonumber(l, -2));
@@ -297,13 +339,13 @@ namespace details
 
     template <typename T>
     bool _array_check(lua_State* l, int index_check) {
-        return lua_isnumber(l, -2) && int(lua_tonumber(l, -2)) == index_check && luacheck<T>(l, -1);
+        return lua_type(l, -2) == LUA_TNUMBER && int(lua_tonumber(l, -2)) == index_check && luacheck<T>(l, -1);
     }
 } // namespace details
 
 template <LuaPushBackableOrRef T>
 auto luaget(lua_State* l, int idx) {
-    if (!lua_istable(l, idx))
+    if (lua_type(l, idx) != LUA_TTABLE)
         throw errors::cast_error(l, idx, "this type can't be casted to C++ array-like container", __PRETTY_FUNCTION__);
     std::decay_t<T> result;
     using value_t = std::decay_t<decltype(*result.begin())>;
@@ -331,7 +373,7 @@ auto luaget(lua_State* l, int idx) {
 template <typename T>
     requires LuaPushBackableOrRef<T> || LuaStaticSettableOrRef<T>
 bool luacheck(lua_State* l, int idx) {
-    if (!lua_istable(l, idx))
+    if (lua_type(l, idx) != LUA_TTABLE)
         return false;
 
     if constexpr (LuaStaticSettableOrRef<T>) {
@@ -359,7 +401,7 @@ bool luacheck(lua_State* l, int idx) {
 
 template <LuaStaticSettableOrRef T>
 auto luaget(lua_State* l, int idx) {
-    if (!lua_istable(l, idx))
+    if (lua_type(l, idx) != LUA_TTABLE)
         throw errors::cast_error(l, idx, "this type can't be casted to C++ array-like container", __PRETTY_FUNCTION__);
     std::decay_t<T> result;
     if (lua_objlen(l, idx) != size(result))
@@ -397,7 +439,7 @@ template <LuaTupleLikeOrRef T>
 auto luaget(lua_State* l, int idx) {
     using type = std::decay_t<T>;
 
-    if (!lua_istable(l, idx))
+    if (lua_type(l, idx) != LUA_TTABLE)
         throw errors::cast_error(l, idx, "this type can't be casted to C++ tuple-like type", __PRETTY_FUNCTION__);
     type result;
     if (lua_objlen(l, idx) != std::tuple_size_v<type>)
@@ -432,7 +474,7 @@ template <LuaTupleLikeOrRef T>
 bool luacheck(lua_State* l, int idx) {
     using type = std::decay_t<T>;
 
-    if (!lua_istable(l, idx))
+    if (lua_type(l, idx) != LUA_TTABLE)
         return false;
 
     if (lua_objlen(l, idx) != std::tuple_size_v<type>)
@@ -469,7 +511,7 @@ bool luacheck(lua_State* l, int idx) {
 /* This is the only thing that can return references */
 template <LuaRegisteredTypeRefOrPtr T>
 T luaget(lua_State* l, int idx) {
-    if (!lua_isuserdata(l, idx))
+    if (lua_type(l, idx) != LUA_TUSERDATA)
         throw errors::cast_error(l, idx, "this type can't be casted to C++ userdata type", __PRETTY_FUNCTION__);
 
     size_t           objlen  = lua_objlen(l, idx);
@@ -506,7 +548,7 @@ T luaget(lua_State* l, int idx) {
 
 template <LuaRegisteredTypeRefOrPtr T>
 bool luacheck(lua_State* l, int idx) {
-    if (!lua_isuserdata(l, idx) || lua_objlen(l, idx) != sizeof(uint64_t) + sizeof(std::remove_pointer_t<T>))
+    if (lua_type(l, idx) != LUA_TUSERDATA || lua_objlen(l, idx) != sizeof(uint64_t) + sizeof(std::remove_pointer_t<T>))
         return false;
 
     void*    ptr = lua_touserdata(l, idx);
@@ -909,7 +951,7 @@ namespace details
         if constexpr (dotsplit) {
             static_assert(dotsplit.left().size() > 0, "Attempt to declare lua table with empty name");
             lua_getfield(l, -1, dotsplit.left().data());
-            if (!lua_istable(l, -1)) {
+            if (lua_type(l, -1) != LUA_TTABLE) {
                 lua_pop(l, 1);
                 lua_newtable(l);
                 lua_pushstring(l, dotsplit.left().data());
@@ -940,7 +982,7 @@ decltype(auto) luaprovide(TName name, lua_State* l, T&& value) {
     if constexpr (dotsplit) {
         static_assert(dotsplit.left().size() > 0, "Attempt to declare lua table with empty name");
         lua_getglobal(l, dotsplit.left().data());
-        if (!lua_istable(l, -1)) {
+        if (lua_type(l, -1) != LUA_TTABLE) {
             lua_pop(l, 1);
             lua_newtable(l);
             lua_pushvalue(l, -1);

@@ -360,4 +360,16 @@ TEST_CASE("basic_types") {
         REQUIRE(l.extract<std::string()>(LUA_TNAME("test2"))() == "a.b.c");
         REQUIRE(l.extract<std::string()>(LUA_TNAME("test3"))() == "its t.a and t.b.c");
     }
+
+    SECTION("optional") {
+        auto l = luactx(lua_code{
+            "function test1(v) assert(v == 200) return v end\n"
+            "function test2(v) assert(v == nil) return v end\n"});
+
+        auto f1 = l.extract<std::optional<int>(std::optional<int>)>(LUA_TNAME("test1"));
+        auto f2 = l.extract<std::optional<int>(std::optional<int>)>(LUA_TNAME("test2"));
+
+        REQUIRE(f1(200) == 200);
+        REQUIRE(!f2({}).has_value());
+    }
 }
