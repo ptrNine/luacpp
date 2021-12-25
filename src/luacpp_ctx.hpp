@@ -61,6 +61,10 @@ public:
             throw errors::init_error("enabling jit failed");
 #endif
 
+#if LUA_VERSION_NUM >= 504
+        lua_gc(l, LUA_GCGEN, 40, 200);
+#endif
+
         register_usertypes();
     }
 
