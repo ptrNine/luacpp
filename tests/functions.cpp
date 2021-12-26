@@ -123,6 +123,23 @@ TEST_CASE("functions") {
         REQUIRE(f(1, "SECOND") == 2);
         REQUIRE(f("FIRST", 2, "THIRD") == 3);
     }
+
+    SECTION("multiple return") {
+        auto l = luactx(lua_code{R"(
+            function f1() return 1, 2, 3 end
+            function f2() return 1 end
+            function f3(v) if v then return 1 else return 1, 2, 3 end end
+        )"});
+
+        auto f1 = l.extract<multiresult<int, int, int>()>(LUA_TNAME("f1"));
+        auto f2 = l.extract<multiresult<int>()>(LUA_TNAME("f2"));
+        auto f3 = l.extract<multiresult<int, std::optional<int>, std::optional<int>>(bool)>(LUA_TNAME("f3"));
+
+        REQUIRE(f1().storage == std::tuple{1, 2, 3});
+        REQUIRE(f2().storage == std::tuple{1});
+        REQUIRE(f3(true).storage == std::tuple{1, std::optional<int>{}, std::optional<int>{}});
+        REQUIRE(f3(false).storage == std::tuple{1, 2, 3});
+    }
 }
 
 TEST_CASE("functions_error_conditions") {

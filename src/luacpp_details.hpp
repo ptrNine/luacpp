@@ -1179,8 +1179,42 @@ decltype(auto) luaextract(TName, lua_State* l) {
     return luaget<T>(l, -1);
 }
 
-template <typename TName, typename T>
-class lua_function;
+template <typename... ArgsT>
+struct multiresult {
+    static constexpr size_t count = sizeof...(ArgsT);
+
+    multiresult(lua_State* l):
+        storage([]<size_t... Idxs>(lua_State * l, std::index_sequence<Idxs...>) {
+            static constexpr auto sz = sizeof...(ArgsT);
+            return std::tuple<ArgsT...>(luaget<ArgsT>(l, -int(sz - Idxs))...);
+        }(l, std::make_index_sequence<sizeof...(ArgsT)>())) {}
+
+    template <size_t N>
+    constexpr decltype(auto) get() {
+        return std::get<N>(storage);
+    }
+    template <size_t N>
+    constexpr decltype(auto) get() const {
+        return std::get<N>(storage);
+    }
+
+    constexpr size_t size() const {
+        return sizeof...(ArgsT);
+    }
+
+    std::tuple<ArgsT...> storage;
+};
+
+namespace details
+{
+    template <typename T>
+    struct is_multiresult : std::false_type {};
+    template <typename... Ts>
+    struct is_multiresult<multiresult<Ts...>> : std::true_type {};
+} // namespace details
+
+template <typename T>
+concept LuaMultiresult = details::is_multiresult<T>::value;
 
 template <typename TName, typename ReturnT>
 class lua_function_base {
@@ -1237,6 +1271,14 @@ protected:
 
         if constexpr (std::is_same_v<ReturnT, void>) {
             luacall(this->l, int(sizeof...(ArgsT)), 0);
+            return;
+        }
+        else if constexpr (LuaMultiresult<ReturnT>) {
+            auto finalize = finalizer{[l = this->l] {
+                lua_pop(l, int(ReturnT::count));
+            }};
+            luacall(this->l, int(sizeof...(ArgsT)), int(ReturnT::count));
+            return ReturnT(l);
         }
         else {
             auto finalize = finalizer{[l = this->l] {
@@ -1252,6 +1294,10 @@ protected:
     lua_State* l;   // NOLINT
     int        ref; // NOLINT
 };
+
+
+template <typename TName, typename T>
+class lua_function;
 
 template <typename TName, typename ReturnT, typename... ArgsT>
 class lua_function<TName, ReturnT(ArgsT...)> : public lua_function_base<TName, ReturnT> {
