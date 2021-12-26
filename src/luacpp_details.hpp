@@ -1185,23 +1185,59 @@ class lua_function;
 template <typename TName, typename ReturnT, typename... ArgsT>
 class lua_function<TName, ReturnT(ArgsT...)> {
 public:
-    lua_function(lua_State* il, TName, ReturnT (*)(ArgsT...)): l(il) {}
-
-    template <bool IsVoid = std::is_same_v<ReturnT, void>>
-    ReturnT operator()(ArgsT&&... args) const {
+    lua_function(lua_State* il, TName, ReturnT (*)(ArgsT...)): l(il) {
         auto stack_depth = luaaccess(TName{}, l);
         auto finalize    = finalizer{[l = this->l, &stack_depth] {
             lua_pop(l, stack_depth - 1);
         }};
 
+        ref = luaL_ref(l, LUA_REGISTRYINDEX); // NOLINT
+    }
+
+    lua_function(const lua_function& function): l(function.l) {
+        lua_rawgeti(l, LUA_REGISTRYINDEX, ref);
+        ref = luaL_ref(l, LUA_REGISTRYINDEX); // NOLINT
+    }
+
+    lua_function& operator=(const lua_function& function) {
+        if (&function == this)
+            return *this;
+        l = function.l;
+        lua_rawgeti(l, LUA_REGISTRYINDEX, ref);
+        ref = luaL_ref(l, LUA_REGISTRYINDEX); // NOLINT
+    }
+
+    lua_function(lua_function&& function) noexcept: l(function.l), ref(function.ref) {
+        function.l = nullptr;
+    }
+
+    lua_function& operator=(lua_function&& function) noexcept {
+        if (&function == this)
+            return *this;
+
+        l          = function.l;
+        ref        = function.ref;
+        function.l = nullptr;
+    }
+
+    ~lua_function() {
+        if (l)
+            luaL_unref(l, LUA_REGISTRYINDEX, ref);
+    }
+
+    template <bool IsVoid = std::is_same_v<ReturnT, void>>
+    ReturnT operator()(ArgsT&&... args) const {
+        lua_rawgeti(l, LUA_REGISTRYINDEX, ref);
         ((luapush(l, args)), ...);
 
         if constexpr (IsVoid) {
             luacall(l, int(sizeof...(ArgsT)), 0);
         }
         else {
+            auto finalize = finalizer{[l = this->l] {
+                lua_pop(l, 1);
+            }};
             luacall(l, int(sizeof...(ArgsT)), 1);
-            ++stack_depth;
             return luaget<ReturnT>(l, -1);
         }
     }
@@ -1212,6 +1248,7 @@ public:
 
 private:
     lua_State* l;
+    int ref;
 };
 
 template <typename T, typename TName>
