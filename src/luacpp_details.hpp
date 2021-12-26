@@ -1182,10 +1182,10 @@ decltype(auto) luaextract(TName, lua_State* l) {
 template <typename TName, typename T>
 class lua_function;
 
-template <typename TName, typename ReturnT, typename... ArgsT>
-class lua_function<TName, ReturnT(ArgsT...)> {
+template <typename TName, typename ReturnT>
+class lua_function_base {
 public:
-    lua_function(lua_State* il, TName, ReturnT (*)(ArgsT...)): l(il) {
+    lua_function_base(lua_State* il, TName): l(il) {
         auto stack_depth = luaaccess(TName{}, l);
         auto finalize    = finalizer{[l = this->l, &stack_depth] {
             lua_pop(l, stack_depth - 1);
@@ -1194,12 +1194,12 @@ public:
         ref = luaL_ref(l, LUA_REGISTRYINDEX); // NOLINT
     }
 
-    lua_function(const lua_function& function): l(function.l) {
+    lua_function_base(const lua_function_base& function): l(function.l) {
         lua_rawgeti(l, LUA_REGISTRYINDEX, ref);
         ref = luaL_ref(l, LUA_REGISTRYINDEX); // NOLINT
     }
 
-    lua_function& operator=(const lua_function& function) {
+    lua_function_base& operator=(const lua_function_base& function) {
         if (&function == this)
             return *this;
         l = function.l;
@@ -1207,11 +1207,11 @@ public:
         ref = luaL_ref(l, LUA_REGISTRYINDEX); // NOLINT
     }
 
-    lua_function(lua_function&& function) noexcept: l(function.l), ref(function.ref) {
+    lua_function_base(lua_function_base&& function) noexcept: l(function.l), ref(function.ref) {
         function.l = nullptr;
     }
 
-    lua_function& operator=(lua_function&& function) noexcept {
+    lua_function_base& operator=(lua_function_base&& function) noexcept {
         if (&function == this)
             return *this;
 
@@ -1220,35 +1220,64 @@ public:
         function.l = nullptr;
     }
 
-    ~lua_function() {
+    ~lua_function_base() {
         if (l)
             luaL_unref(l, LUA_REGISTRYINDEX, ref);
-    }
-
-    template <bool IsVoid = std::is_same_v<ReturnT, void>>
-    ReturnT operator()(ArgsT&&... args) const {
-        lua_rawgeti(l, LUA_REGISTRYINDEX, ref);
-        ((luapush(l, args)), ...);
-
-        if constexpr (IsVoid) {
-            luacall(l, int(sizeof...(ArgsT)), 0);
-        }
-        else {
-            auto finalize = finalizer{[l = this->l] {
-                lua_pop(l, 1);
-            }};
-            luacall(l, int(sizeof...(ArgsT)), 1);
-            return luaget<ReturnT>(l, -1);
-        }
     }
 
     constexpr TName name() const {
         return TName{};
     }
 
-private:
-    lua_State* l;
-    int ref;
+protected:
+    template <typename... ArgsT>
+    ReturnT call_impl(ArgsT&&... args) const {
+        lua_rawgeti(this->l, LUA_REGISTRYINDEX, this->ref);
+        ((luapush(this->l, args)), ...);
+
+        if constexpr (std::is_same_v<ReturnT, void>) {
+            luacall(this->l, int(sizeof...(ArgsT)), 0);
+        }
+        else {
+            auto finalize = finalizer{[l = this->l] {
+                lua_pop(l, 1);
+            }};
+            luacall(this->l, int(sizeof...(ArgsT)), 1);
+            return luaget<ReturnT>(this->l, -1);
+        }
+    }
+
+protected:
+
+    lua_State* l;   // NOLINT
+    int        ref; // NOLINT
+};
+
+template <typename TName, typename ReturnT, typename... ArgsT>
+class lua_function<TName, ReturnT(ArgsT...)> : public lua_function_base<TName, ReturnT> {
+public:
+    using lua_function_base<TName, ReturnT>::lua_function_base;
+
+    lua_function(lua_State* il, TName, ReturnT (*)(ArgsT...)): lua_function_base<TName, ReturnT>(il, TName{}) {}
+
+    template <bool IsVoid = std::is_same_v<ReturnT, void>>
+    ReturnT operator()(ArgsT&&... args) const {
+        return this->call_impl(std::forward<ArgsT>(args)...);
+    }
+};
+
+struct variable_args {};
+template <typename TName, typename ReturnT>
+class lua_function<TName, ReturnT(variable_args)> : public lua_function_base<TName, ReturnT> {
+public:
+    using lua_function_base<TName, ReturnT>::lua_function_base;
+
+    lua_function(lua_State* il, TName, ReturnT (*)(variable_args)): lua_function_base<TName, ReturnT>(il, TName{}) {}
+
+    template <typename... ArgsT>
+    ReturnT operator()(ArgsT&&... args) const {
+        return this->call_impl(std::forward<ArgsT>(args)...);
+    }
 };
 
 template <typename T, typename TName>

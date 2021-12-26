@@ -92,6 +92,37 @@ TEST_CASE("functions") {
 
         REQUIRE(top == l.top());
     }
+
+    SECTION("variable arguments") {
+        auto l = luactx(lua_code{R"(
+            function f(...)
+                local args = {...}
+                local nargs = #args
+                if nargs == 0 then
+                    return 0
+                elseif nargs == 1 then
+                    assert(args[1] == "FIRST")
+                    return 1
+                elseif nargs == 2 then
+                    assert(args[1] == 1)
+                    assert(args[2] == "SECOND")
+                    return 2
+                elseif nargs == 3 then
+                    assert(args[1] == "FIRST")
+                    assert(args[2] == 2)
+                    assert(args[3] == "THIRD")
+                    return 3
+                end
+            end)"
+        });
+
+        auto f = l.extract<int(variable_args)>(LUA_TNAME("f"));
+
+        REQUIRE(f() == 0);
+        REQUIRE(f("FIRST") == 1);
+        REQUIRE(f(1, "SECOND") == 2);
+        REQUIRE(f("FIRST", 2, "THIRD") == 3);
+    }
 }
 
 TEST_CASE("functions_error_conditions") {
