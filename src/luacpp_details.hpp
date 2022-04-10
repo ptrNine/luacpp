@@ -99,6 +99,10 @@ void luapush(lua_State* l, const LuaListLike auto& value);
 
 void luapush(lua_State* l, const LuaTupleLike auto& value);
 
+template <typename T>
+    requires LuaRegisteredType<std::decay_t<T>>
+std::decay_t<T>& luapush(lua_State* l, T&& value);
+
 template <LuaPushBackableOrRef T>
 auto luaget(lua_State* l, int idx);
 
