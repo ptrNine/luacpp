@@ -40,7 +40,7 @@ concept LuaStringLikeOrRef = LuaStringLike<std::decay_t<T>>;
 template <typename T>
 concept LuaTupleLike = requires {
     std::tuple_size<T>::value;
-};
+} && !LuaRegisteredType<T>;
 
 template <typename T>
 concept LuaOptionalLike = !std::is_pointer_v<T> && requires (T v) {
@@ -60,7 +60,7 @@ template <typename T>
 concept LuaListLike = !LuaTupleLike<T> && !LuaStringLike<T> && requires(const T& v) {
     {begin(v)};
     {end(v)};
-};
+} && !LuaRegisteredType<T>;
 
 template <typename T>
 concept LuaListLikeOrRef = LuaListLike<std::decay_t<T>>;
@@ -68,7 +68,7 @@ concept LuaListLikeOrRef = LuaListLike<std::decay_t<T>>;
 template <typename T>
 concept LuaArrayLike = LuaListLike<T> && requires(const T& v) {
     { end(v) - begin(v) } -> std::convertible_to<size_t>;
-};
+} && !LuaRegisteredType<T>;
 
 template <typename T>
 concept LuaArrayLikeOrRef = LuaArrayLike<std::decay_t<T>>;
@@ -76,7 +76,7 @@ concept LuaArrayLikeOrRef = LuaArrayLike<std::decay_t<T>>;
 template <typename T>
 concept LuaPushBackable = !LuaStringLike<T> && requires(T & v) {
     {v.push_back(std::declval<decltype(*v.begin())>())};
-};
+} && !LuaRegisteredType<T>;
 
 template <typename T>
 concept LuaPushBackableOrRef = LuaPushBackable<std::decay_t<T>>;
@@ -85,7 +85,7 @@ template <typename T>
 concept LuaStaticSettable = !LuaTupleLike<T> && !LuaStringLike<T> && !LuaPushBackable<T> && requires(T & v) {
     {v[0] = v[0]};
     { size(v) } -> std::convertible_to<size_t>;
-};
+} && !LuaRegisteredType<T>;
 
 template <typename T>
 concept LuaStaticSettableOrRef = LuaStaticSettable<std::decay_t<T>>;
