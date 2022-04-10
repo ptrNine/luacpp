@@ -112,6 +112,12 @@ auto luaget(lua_State* l, int idx);
 template <LuaTupleLikeOrRef T>
 auto luaget(lua_State* l, int idx);
 
+template <LuaRegisteredTypeRefOrPtr T>
+T luaget(lua_State* l, int idx);
+
+template <LuaRegisteredTypeRefOrPtr T>
+bool luacheck(lua_State* l, int idx);
+
 template <typename T>
     requires LuaPushBackableOrRef<T> || LuaStaticSettableOrRef<T>
 bool luacheck(lua_State* l, int idx);
