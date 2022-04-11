@@ -146,10 +146,8 @@ TEST_CASE("functions") {
         auto top    = l.top();
         bool called = false;
         l.provide(LUA_TNAME("cppfunc"), [&] {
-            l.push("a");
-            l.push("b");
             called = true;
-            return explicit_return{2};
+            return explicit_return(l, "a", "b");
         });
         l.extract<void()>(LUA_TNAME("cppcall"))();
         REQUIRE(called);

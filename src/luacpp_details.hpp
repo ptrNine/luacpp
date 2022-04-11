@@ -635,7 +635,14 @@ struct native_function {
 };
 
 struct explicit_return {
-    int count = 0;
+    explicit_return(int count = 0): values_count(count) {}
+
+    template <typename LuaCtx, typename... Ts>
+    explicit_return(LuaCtx& ctx, Ts&&... values): values_count(int(sizeof...(values))) {
+        (ctx.push(std::forward<Ts>(values)), ...);
+    }
+
+    int values_count = 0;
 };
 
 namespace details
@@ -660,7 +667,7 @@ namespace details
             return []<size_t... Idxs>([[maybe_unused]] lua_State * l, auto&& function, std::index_sequence<Idxs...>) {
                 return function(luaget<ArgsT>(l, int(Idxs + 1))...);
             }
-            (l, function, std::make_index_sequence<sizeof...(ArgsT)>()).count;
+            (l, function, std::make_index_sequence<sizeof...(ArgsT)>()).values_count;
         }
         else {
             luapush(
