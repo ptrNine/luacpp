@@ -634,6 +634,10 @@ struct native_function {
     FuncT function;
 };
 
+struct explicit_return {
+    int count = 0;
+};
+
 namespace details
 {
     template <typename ReturnT, typename... ArgsT>
@@ -651,6 +655,12 @@ namespace details
             }
             (l, function, std::make_index_sequence<sizeof...(ArgsT)>());
             return 0;
+        }
+        else if constexpr (std::is_same_v<ReturnT, explicit_return>) {
+            return []<size_t... Idxs>([[maybe_unused]] lua_State * l, auto&& function, std::index_sequence<Idxs...>) {
+                return function(luaget<ArgsT>(l, int(Idxs + 1))...);
+            }
+            (l, function, std::make_index_sequence<sizeof...(ArgsT)>()).count;
         }
         else {
             luapush(

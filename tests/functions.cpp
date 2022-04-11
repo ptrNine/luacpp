@@ -140,6 +140,21 @@ TEST_CASE("functions") {
         REQUIRE(f3(true).storage == std::tuple{1, std::optional<int>{}, std::optional<int>{}});
         REQUIRE(f3(false).storage == std::tuple{1, 2, 3});
     }
+
+    SECTION("explicit return") {
+        auto l      = luactx(lua_code{"function cppcall() a, b = cppfunc() assert(a == 'a') assert(b == 'b') end"});
+        auto top    = l.top();
+        bool called = false;
+        l.provide(LUA_TNAME("cppfunc"), [&] {
+            l.push("a");
+            l.push("b");
+            called = true;
+            return explicit_return{2};
+        });
+        l.extract<void()>(LUA_TNAME("cppcall"))();
+        REQUIRE(called);
+        REQUIRE(top == l.top());
+    }
 }
 
 TEST_CASE("functions_error_conditions") {
