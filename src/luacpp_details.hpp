@@ -48,7 +48,7 @@ concept LuaOptionalLike = !std::is_pointer_v<T> && requires (T v) {
     {v.value()};
     {v.reset()};
     {v.has_value()} -> std::convertible_to<bool>;
-};
+} && !LuaRegisteredType<T>;
 
 template <typename T>
 concept LuaOptionalLikeOrRef = LuaOptionalLike<std::decay_t<T>>;
