@@ -101,7 +101,7 @@ void luapush(lua_State* l, const LuaTupleLike auto& value);
 
 template <typename T>
     requires LuaRegisteredType<std::decay_t<T>>
-std::decay_t<T>& luapush(lua_State* l, T&& value);
+std::decay_t<T>* luapush(lua_State* l, T&& value);
 
 template <LuaPushBackableOrRef T>
 auto luaget(lua_State* l, int idx);
@@ -212,7 +212,14 @@ void luapush(lua_State* l, const LuaTupleLike auto& value) {
 }
 
 template <typename T> requires LuaRegisteredType<std::decay_t<T>>
-std::decay_t<T>& luapush(lua_State* l, T&& value) {
+std::decay_t<T>* luapush(lua_State* l, T&& value) {
+    if constexpr (std::is_pointer_v<std::decay_t<T>>) {
+        if (!value) {
+            luapush(l, nullptr);
+            return nullptr;
+        }
+    }
+
     void*    p          = lua_newuserdata(l, sizeof(uint64_t) + sizeof(value));
     uint64_t type_index = type_registry::get_index<std::decay_t<T>>();
     std::memcpy(p, &type_index, sizeof(type_index));
@@ -221,7 +228,7 @@ std::decay_t<T>& luapush(lua_State* l, T&& value) {
     lua_getglobal(l, type_registry::get_typespec<std::decay_t<T>>().lua_name().data());
     lua_setmetatable(l, -2);
 
-    return *ptr;
+    return ptr;
 }
 
 inline void luapush(lua_State* l, lua_CFunction value) {
