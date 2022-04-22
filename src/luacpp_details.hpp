@@ -1277,7 +1277,7 @@ public:
         ref = luaL_ref(l, LUA_REGISTRYINDEX); // NOLINT
     }
 
-    lua_function_base(const lua_function_base& function): l(function.l) {
+    lua_function_base(const lua_function_base& function): l(function.l), func_name(function.func_name) {
         lua_rawgeti(l, LUA_REGISTRYINDEX, ref);
         ref = luaL_ref(l, LUA_REGISTRYINDEX); // NOLINT
     }
@@ -1288,9 +1288,11 @@ public:
         l = function.l;
         lua_rawgeti(l, LUA_REGISTRYINDEX, ref);
         ref = luaL_ref(l, LUA_REGISTRYINDEX); // NOLINT
+        func_name = function.func_name;
     }
 
-    lua_function_base(lua_function_base&& function) noexcept: l(function.l), ref(function.ref) {
+    lua_function_base(lua_function_base&& function) noexcept:
+        l(function.l), ref(function.ref), func_name(std::move(function.func_name)) {
         function.l = nullptr;
     }
 
@@ -1300,6 +1302,7 @@ public:
 
         l          = function.l;
         ref        = function.ref;
+        func_name  = function.func_name;
         function.l = nullptr;
     }
 
