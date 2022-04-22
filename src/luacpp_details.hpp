@@ -5,6 +5,7 @@
 #include <tuple>
 #include <type_traits>
 #include <optional>
+#include <iostream>
 
 #include "luacpp_lib.hpp"
 #include "luacpp_usertype_registry.hpp"
@@ -981,7 +982,7 @@ namespace details
 {
     template <typename TName>
     decltype(auto) _lua_recursive_provide_namespaced_value(TName name, lua_State* l, auto&& value) {
-        constexpr auto dotsplit = name.template divide_by<'.'>();
+        constexpr auto dotsplit = name.template divide_by(int_const<'.'>{});
         if constexpr (dotsplit) {
             static_assert(dotsplit.left().size() > 0, "Attempt to declare lua table with empty name");
             lua_getfield(l, -1, dotsplit.left().data());
@@ -1012,7 +1013,7 @@ namespace details
 
 template <typename T, typename TName>
 decltype(auto) luaprovide(TName name, lua_State* l, T&& value) {
-    constexpr auto dotsplit = name.template divide_by<'.'>();
+    constexpr auto dotsplit = name.template divide_by(int_const<'.'>{});
     if constexpr (dotsplit) {
         static_assert(dotsplit.left().size() > 0, "Attempt to declare lua table with empty name");
         lua_getglobal(l, dotsplit.left().data());
@@ -1163,16 +1164,27 @@ namespace errors
     };
 } // namespace errors
 
-template <typename TName>
-int luaaccess(TName name, lua_State* l, int stack_depth = 0) {
-    constexpr auto dotsplit = name.template divide_by<'.'>();
+#define stringify(s) #s
+#define poly_assert(expr, msg)                                                                                         \
+    do {                                                                                                               \
+        static_assert(!__builtin_constant_p(expr) || (expr), msg);                                                     \
+        if constexpr (!__builtin_constant_p(expr)) {                                                                   \
+            if (!(expr)) {                                                                                             \
+                std::cerr << "assertion failed: " __FILE__ ":" << __LINE__ << "\n    " << __FUNCTION__                 \
+                          << "(): \"" stringify(expr) "\" evaluates to false\n    msg: " << msg << std::endl;         \
+                std::abort();                                                                                          \
+            }                                                                                                          \
+        }                                                                                                              \
+    } while (0)
 
+template <typename NameT>
+int luaaccess(NameT&& name, lua_State* l, int stack_depth = 0) {
     auto guard = exception_guard{[&] {
         lua_pop(l, stack_depth);
     }};
 
-    if constexpr (dotsplit) {
-        static_assert(dotsplit.left().size() > 0, "Attempt to access lua variable with empty name");
+    if (auto dotsplit = name.divide_by(int_const<'.'>{})) {
+        poly_assert(dotsplit.left().size() > 0, "Attempt to access lua variable with empty name");
 
         ++stack_depth;
 
@@ -1189,7 +1201,7 @@ int luaaccess(TName name, lua_State* l, int stack_depth = 0) {
         return luaaccess(dotsplit.right(), l, stack_depth);
     }
     else {
-        static_assert(name.size() > 0, "Attempt to access lua variable with empty name");
+        poly_assert(name.size() > 0, "Attempt to access lua variable with empty name");
         ++stack_depth;
 #if (LUA_VERSION_NUM < 502)
         lua_getfield(l, stack_depth == 1 ? LUA_GLOBALSINDEX : -1, name.data());
@@ -1203,9 +1215,12 @@ int luaaccess(TName name, lua_State* l, int stack_depth = 0) {
     }
 }
 
-template <typename T, typename TName>
-decltype(auto) luaextract(TName, lua_State* l) {
-    int  stack_depth = luaaccess(TName{}, l);
+#undef stringify
+#undef poly_assert
+
+template <typename T, typename NameT>
+decltype(auto) luaextract(NameT&& name, lua_State* l) {
+    int  stack_depth = luaaccess(std::forward<NameT>(name), l);
     auto finalize    = finalizer{[l, stack_depth] {
         lua_pop(l, stack_depth);
     }};
@@ -1253,8 +1268,8 @@ concept LuaMultiresult = details::is_multiresult<T>::value;
 template <typename TName, typename ReturnT>
 class lua_function_base {
 public:
-    lua_function_base(lua_State* il, TName): l(il) {
-        auto stack_depth = luaaccess(TName{}, l);
+    lua_function_base(lua_State* il, TName name): func_name(std::move(name)), l(il) {
+        auto stack_depth = luaaccess(func_name, l);
         auto finalize    = finalizer{[l = this->l, &stack_depth] {
             lua_pop(l, stack_depth - 1);
         }};
@@ -1293,8 +1308,8 @@ public:
             luaL_unref(l, LUA_REGISTRYINDEX, ref);
     }
 
-    constexpr TName name() const {
-        return TName{};
+    constexpr const TName& name() const {
+        return func_name;
     }
 
 protected:
@@ -1324,11 +1339,10 @@ protected:
     }
 
 protected:
-
+    TName      func_name;
     lua_State* l;   // NOLINT
     int        ref; // NOLINT
 };
-
 
 template <typename TName, typename T>
 class lua_function;
@@ -1338,7 +1352,7 @@ class lua_function<TName, ReturnT(ArgsT...)> : public lua_function_base<TName, R
 public:
     using lua_function_base<TName, ReturnT>::lua_function_base;
 
-    lua_function(lua_State* il, TName, ReturnT (*)(ArgsT...)): lua_function_base<TName, ReturnT>(il, TName{}) {}
+    lua_function(lua_State* il, TName name, ReturnT (*)(ArgsT...)): lua_function_base<TName, ReturnT>(il, std::move(name)) {}
 
     template <bool IsVoid = std::is_same_v<ReturnT, void>>
     ReturnT operator()(ArgsT&&... args) const {
@@ -1352,7 +1366,8 @@ class lua_function<TName, ReturnT(variable_args)> : public lua_function_base<TNa
 public:
     using lua_function_base<TName, ReturnT>::lua_function_base;
 
-    lua_function(lua_State* il, TName, ReturnT (*)(variable_args)): lua_function_base<TName, ReturnT>(il, TName{}) {}
+    lua_function(lua_State* il, TName name, ReturnT (*)(variable_args)):
+        lua_function_base<TName, ReturnT>(il, std::move(name)) {}
 
     template <typename... ArgsT>
     ReturnT operator()(ArgsT&&... args) const {
@@ -1360,11 +1375,10 @@ public:
     }
 };
 
-template <typename T, typename TName>
+template <typename T, typename NameT>
     requires std::is_function_v<T>
-auto luaextract(TName, lua_State* l) {
+auto luaextract(NameT&& name, lua_State* l) {
     using ptr = T*;
-    return lua_function<TName, T>(l, TName{}, ptr{});
+    return lua_function<std::decay_t<NameT>, T>(l, std::forward<NameT>(name), ptr{});
 }
-
 } // namespace luacpp

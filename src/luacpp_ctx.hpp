@@ -232,8 +232,8 @@ public:
     }
 
     template <typename T, typename NameT>
-    decltype(auto) extract(NameT) {
-        return luaextract<T>(NameT{}, l);
+    decltype(auto) extract(NameT&& name) {
+        return luaextract<T>(std::forward<NameT>(name), l);
     }
 
     template <typename T>

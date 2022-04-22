@@ -4,6 +4,8 @@
 #include <string>
 #include <cstdint>
 
+#include "luacpp_integral_constant.hpp"
+
 namespace luacpp {
 
 template<class... Ts> struct overloaded : Ts... { using Ts::operator()...; };
@@ -29,18 +31,37 @@ struct lua_tname_divide_result_t {
     }
 };
 
-template <size_t I, bool Success, typename T1, typename T2>
-constexpr auto get(const lua_tname_divide_result_t<Success, T1, T2>&) {
-    if constexpr (I == 0)
-        return T1{};
-    if constexpr (I == 1)
-        return T2{};
-}
+template <typename T>
+struct lua_name_divide_result_t {
+    bool _divide_result;
+    T    _left;
+    T    _right;
 
+    const T& left() const {
+        return _left;
+    }
+    const T& right() const {
+        return _right;
+    }
+    constexpr bool success() const {
+        return _divide_result;
+    }
+    constexpr operator bool() const {
+        return success();
+    }
+};
+
+template <size_t I, bool Success, typename T1, typename T2>
+constexpr auto get(const lua_tname_divide_result_t<Success, T1, T2>& r) {
+    if constexpr (I == 0)
+        return r.left();
+    if constexpr (I == 1)
+        return r.right();
+}
 
 template <bool Success, typename T1, typename T2>
 constexpr auto lua_tname_divide_result(T1, T2) {
-    return lua_tname_divide_result_t<Success, T1, T2>();
+    return lua_tname_divide_result_t<Success, T1, T2>{};
 }
 
 template <char... Cs>
@@ -62,19 +83,19 @@ struct lua_tname {
         return hsh;
     }
 
-    template <size_t start, size_t size = sizeof...(Cs) - start>
-    constexpr auto substr() const {
+    template <typename StartT, typename SizeT = int_const<sizeof...(Cs) - StartT{}>>
+    constexpr auto substr(StartT, SizeT) const {
         return []<size_t... Idxs>(std::index_sequence<Idxs...>) {
-            return lua_tname<_storage[start + Idxs]...>{};
+            return lua_tname<_storage[StartT{} + Idxs]...>{};
         }
-        (std::make_index_sequence<size>());
+        (std::make_index_sequence<SizeT{}>());
     }
 
-    template <char separator>
-    constexpr auto divide_by() const {
+    template <typename CharT>
+    constexpr auto divide_by(CharT) const {
         constexpr auto pos = []<size_t... Idxs>(std::index_sequence<Idxs...>) {
             size_t p = 0;
-            ((_storage[sizeof...(Idxs) - Idxs - 1] == separator ? (p = (sizeof...(Idxs) - Idxs)) : (p)), ...);
+            ((_storage[sizeof...(Idxs) - Idxs - 1] == char(CharT{}) ? (p = (sizeof...(Idxs) - Idxs)) : (p)), ...);
             return p - 1;
             // return ((Cs == separator ? Idxs + 1 : 0) + ... + 1) - 2;
         }
@@ -83,7 +104,8 @@ struct lua_tname {
         if constexpr (pos == size_t(-1))
             return lua_tname_divide_result<false>(lua_tname<Cs...>{}, lua_tname<Cs...>{});
         else
-            return lua_tname_divide_result<true>(substr<0, pos>(), substr<pos + 1, sizeof...(Cs) - (pos + 1)>());
+            return lua_tname_divide_result<true>(substr(int_const<size_t(0)>{}, int_const<pos>{}),
+                                                 substr(int_const<pos + 1>{}, int_const<sizeof...(Cs) - (pos + 1)>{}));
     }
 
     template <char... Cs2>
@@ -113,6 +135,68 @@ struct lua_tname {
         return !std::is_same_v<lua_tname, lua_tname<Cs2...>>;
     }
 };
+
+struct lua_name {
+    lua_name(std::string str): _storage(std::move(str)) {}
+
+    std::string _storage;
+
+    const char* data() const {
+        return _storage.data();
+    }
+
+    size_t size() const {
+        return _storage.size();
+    }
+
+    uint64_t hash() const {
+        uint64_t hsh = 14695981039346656037ULL;
+        for (auto c : _storage) {
+            hsh ^= uint8_t(c);
+            hsh *= 1099511628211ULL;
+        }
+        return hsh;
+    }
+
+    template <typename StartT, typename SizeT>
+    auto substr(StartT start, SizeT sz) const {
+        return lua_name{_storage.substr(start, sz)};
+    }
+
+    template <typename CharT>
+    auto divide_by(CharT separator) const {
+        auto pos = _storage.rfind(separator);
+
+        if (pos == std::string::npos)
+            return lua_name_divide_result_t<lua_name>{false, *this, *this};
+        else
+            return lua_name_divide_result_t<lua_name>{true, substr(0U, pos), substr(pos + 1, size() - (pos + 1))};
+    }
+
+    auto operator+(const lua_name& name) const {
+        return lua_name{_storage + name._storage};
+    }
+
+    auto dot(const lua_name& name) const {
+        return lua_name{_storage + '.' + name._storage};
+    }
+
+    operator const std::string&() const {
+        return _storage;
+    }
+
+    operator std::string_view() const {
+        return _storage;
+    }
+
+    bool operator==(const lua_name& name) const {
+        return _storage == name._storage;
+    }
+    bool operator!=(const lua_name& name) const {
+        return _storage != name._storage;
+    }
+};
+
 
 #define LUA_TNAME(STR)                                                                                                 \
     []<size_t... Idxs>(std::index_sequence<Idxs...>) constexpr {                                                       \

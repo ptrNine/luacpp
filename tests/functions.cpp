@@ -13,6 +13,9 @@ TEST_CASE("functions") {
         l.provide(LUA_TNAME("cppfunc"), [&]{ called = true; });
         l.extract<void()>(LUA_TNAME("cppcall"))();
         REQUIRE(called);
+        called = false;
+        l.extract<void()>(lua_name{"cppcall"})();
+        REQUIRE(called);
         REQUIRE(top == l.top());
     }
 
@@ -37,6 +40,9 @@ TEST_CASE("functions") {
                 called = true;
             });
         l.extract<void()>(LUA_TNAME("cppcall"))();
+        REQUIRE(called);
+        called = false;
+        l.extract<void()>(lua_name{"cppcall"})();
         REQUIRE(called);
         REQUIRE(top == l.top());
     }
@@ -88,7 +94,8 @@ TEST_CASE("functions") {
                 REQUIRE(v == type3{{{true, {"one", 2}}, {false, {"three", 4}}}});
             });
         l.extract<void()>(LUA_TNAME("cppcall"))();
-        REQUIRE(calls == 6);
+        l.extract<void()>(lua_name{"cppcall"})();
+        REQUIRE(calls == 12);
 
         REQUIRE(top == l.top());
     }
@@ -150,6 +157,9 @@ TEST_CASE("functions") {
             return explicit_return(l, "a", "b");
         });
         l.extract<void()>(LUA_TNAME("cppcall"))();
+        REQUIRE(called);
+        called = false;
+        l.extract<void()>(lua_name{"cppcall"})();
         REQUIRE(called);
         REQUIRE(top == l.top());
     }
