@@ -374,7 +374,7 @@ TEST_CASE("basic_types") {
     }
 
     SECTION("field not exists") {
-        auto l = luactx(lua_code{"one = 3"});
+        auto l = luactx(lua_code{"one = 3 two = {three = {four = 4}}"});
         auto top = l.top();
         bool catched = false;
         try {
@@ -384,6 +384,16 @@ TEST_CASE("basic_types") {
             catched = true;
         }
         REQUIRE(catched);
+        REQUIRE(l.top() == top);
+
+        catched = false;
+        try {
+            REQUIRE(l.extract<int>(lua_name("two.three.four")) == 4);
+        }
+        catch (const errors::access_error&) {
+            catched = true;
+        }
+        REQUIRE(!catched);
         REQUIRE(l.top() == top);
     }
 }

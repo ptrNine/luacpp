@@ -165,7 +165,7 @@ struct lua_name {
 
     template <typename CharT>
     auto divide_by(CharT separator) const {
-        auto pos = _storage.rfind(separator);
+        auto pos = _storage.find(separator);
 
         if (pos == std::string::npos)
             return lua_name_divide_result_t<lua_name>{false, *this, *this};
