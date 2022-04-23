@@ -86,6 +86,12 @@ struct assist_some {
         put_indent(out, indent);
         switch (type) {
         case assist_type::field:
+            if (metatable) {
+                out += "--- @class ";
+                out += name;
+                out += '\n';
+                put_indent(out, indent);
+            }
             out += name;
             out += " = {";
             if (!children.empty()) {
