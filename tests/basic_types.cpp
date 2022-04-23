@@ -372,4 +372,18 @@ TEST_CASE("basic_types") {
         REQUIRE(f1(200) == 200);
         REQUIRE(!f2({}).has_value());
     }
+
+    SECTION("field not exists") {
+        auto l = luactx(lua_code{"one = 3"});
+        auto top = l.top();
+        bool catched = false;
+        try {
+            l.extract<int>(LUA_TNAME("one.two.three"));
+        }
+        catch (const errors::access_error&) {
+            catched = true;
+        }
+        REQUIRE(catched);
+        REQUIRE(l.top() == top);
+    }
 }

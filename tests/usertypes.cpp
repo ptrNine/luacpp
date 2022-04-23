@@ -151,7 +151,41 @@ end
 )";
 
 TEST_CASE("usertypes") {
-    auto l = luactx(lua_code{code});
-    lua_setup_usertypes(l);
-    l.extract<void()>(LUA_TNAME("test"))();
+    SECTION("basic") {
+        auto l = luactx(lua_code{code});
+        lua_setup_usertypes(l);
+        l.extract<void()>(LUA_TNAME("test"))();
+    }
+    SECTION("field not exists") {
+        luactx l;
+        lua_setup_usertypes(l);
+        l.load_and_call(lua_code{"v = vec3.new(0)"});
+
+        auto top = l.top();
+        bool catched = false;
+        try {
+            l.extract<int>(LUA_TNAME("v.unexisted_field.boom"));
+        }
+        catch (const errors::access_error&) {
+            catched = true;
+        }
+        REQUIRE(catched);
+        REQUIRE(l.top() == top);
+    }
+    SECTION("wrong type") {
+        luactx l;
+        lua_setup_usertypes(l);
+        l.load_and_call(lua_code{"v = vec3.new(0)"});
+
+        auto top = l.top();
+        bool catched = false;
+        try {
+            l.extract<int>(LUA_TNAME("v.unexisted_field"));
+        }
+        catch (const errors::cast_error&) {
+            catched = true;
+        }
+        REQUIRE(catched);
+        REQUIRE(l.top() == top);
+    }
 }

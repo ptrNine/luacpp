@@ -1158,9 +1158,9 @@ lua_CFunction luaprovide_overloaded(TName name, lua_State* l, Fs... functions) {
 
 namespace errors
 {
-    class lua_access_error : public std::runtime_error {
+    class access_error : public std::runtime_error {
     public:
-        lua_access_error(const std::string& msg): std::runtime_error("luacpp: " + msg) {}
+        access_error(const std::string& msg): std::runtime_error("luacpp: " + msg) {}
     };
 } // namespace errors
 
@@ -1178,10 +1178,13 @@ namespace errors
     } while (0)
 
 template <typename NameT>
-int luaaccess(NameT&& name, lua_State* l, int stack_depth = 0) {
+int luaaccess(NameT&& name, lua_State* l, int stack_depth = 0, int prev_type = LUA_TTABLE) {
     auto guard = exception_guard{[&] {
         lua_pop(l, stack_depth);
     }};
+
+    if (prev_type != LUA_TTABLE && prev_type != LUA_TUSERDATA)
+        throw errors::access_error("Attempt to index a " + std::string(lua_typename(l, prev_type)) + " value");
 
     if (auto dotsplit = name.divide_by(int_const<'.'>{})) {
         poly_assert(dotsplit.left().size() > 0, "Attempt to access lua variable with empty name");
@@ -1190,15 +1193,14 @@ int luaaccess(NameT&& name, lua_State* l, int stack_depth = 0) {
 
 #if (LUA_VERSION_NUM < 502)
         lua_getfield(l, stack_depth == 1 ? LUA_GLOBALSINDEX : -1, dotsplit.left().data());
+        prev_type = lua_type(l, -1);
 #else
-        if (stack_depth == 1)
-            lua_getglobal(l, dotsplit.left().data());
-        else
-            lua_getfield(l, -1, dotsplit.left().data());
+        prev_type = stack_depth == 1 ? lua_getglobal(l, dotsplit.left().data())
+                                     : lua_getfield(l, -1, dotsplit.left().data());
 #endif
 
         guard.dismiss();
-        return luaaccess(dotsplit.right(), l, stack_depth);
+        return luaaccess(dotsplit.right(), l, stack_depth, prev_type);
     }
     else {
         poly_assert(name.size() > 0, "Attempt to access lua variable with empty name");

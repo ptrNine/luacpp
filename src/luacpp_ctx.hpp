@@ -219,15 +219,15 @@ public:
                 auto found_field = table.find(field);
                 if (found_field != table.end()) {
                     if (!found_field->second.set)
-                        throw errors::lua_access_error(std::string("the field '") + field + "' of object type " +
-                                                       type_registry::get_typespec<UserType>().lua_name().data() +
-                                                       " is private");
+                        throw errors::access_error(std::string("the field '") + field + "' of object type " +
+                                                   type_registry::get_typespec<UserType>().lua_name().data() +
+                                                   " is private");
                     found_field->second.set(data, *this);
                 }
                 else
-                    throw errors::lua_access_error(std::string("object of type '") +
-                                                   type_registry::get_typespec<UserType>().lua_name().data() +
-                                                   "' has no '" + field + "' field");
+                    throw errors::access_error(std::string("object of type '") +
+                                               type_registry::get_typespec<UserType>().lua_name().data() +
+                                               "' has no '" + field + "' field");
             });
     }
 
