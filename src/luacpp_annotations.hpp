@@ -498,14 +498,19 @@ public:
         append_text(false, '\n');
         put_indent();
         append_comment(table, false);
-        append_text(false, table.name, " = {\n");
+        append_text(false, table.name, " = {");
         increment_indent();
 
+        bool was_inner = false;
         for (auto& [_, inner] : table.values) {
             inner->accept(*this);
+            append_text(false, ',');
+            was_inner = true;
         }
-        var_text.pop_back();
+        if (was_inner)
+            var_text.pop_back();
 
+        append_text(false, '\n');
         decrement_indent();
         append_text(false, "}");
     }
