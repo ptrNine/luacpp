@@ -2,7 +2,8 @@
 
 #include "luacpp_details.hpp"
 #include "luacpp_member_table.hpp"
-#include "luacpp_assist_gen.hpp"
+//#include "luacpp_assist_gen.hpp"
+#include "luacpp_annotations.hpp"
 
 namespace luacpp {
 
@@ -128,9 +129,8 @@ public:
     }
 
     template <typename NameT, typename T>
-    decltype(auto) provide(NameT, T&& value) {
-        if (generate_assist_file)
-            provide_assist<NameT, T>();
+    decltype(auto) provide(const NameT& name, T&& value) {
+        provide_assist(name, value);
 
         return luaprovide(NameT{}, l, std::forward<T>(value));
     }
@@ -164,32 +164,24 @@ public:
     }
 
     template <typename NameT, typename F1, typename F2, typename... Fs>
-    auto provide(NameT, F1&& function1, F2&& function2, Fs&&... functions) {
-        if (generate_assist_file)
-            provide_assist<NameT, F1, F2, Fs...>();
+    auto provide(const NameT& name, F1&& function1, F2&& function2, Fs&&... functions) {
+        provide_assist<F1, F2, Fs...>(name);
 
         return luaprovide_overloaded(
-            NameT{}, l, std::forward<F1>(function1), std::forward<F2>(function2), std::forward<Fs>(functions)...);
+            name, l, std::forward<F1>(function1), std::forward<F2>(function2), std::forward<Fs>(functions)...);
     }
 
     template <typename UserType, typename NameT, typename T>
-    decltype(auto) provide_member(NameT, T&& value) {
-        if (generate_assist_file) {
-            if constexpr (LuaFunctionLike<T>)
-                provide_assist_for_member_function<UserType, NameT, T>();
-            else
-                provide_assist<decltype(type_registry::get_typespec<UserType>().lua_name().dot(NameT{})), T>();
-        }
-
-        return luaprovide(
-            type_registry::get_typespec<UserType>().lua_name().dot(NameT{}), l, std::forward<T>(value));
+    decltype(auto) provide_member(const NameT& name, T&& value) {
+        auto full_name = type_registry::get_typespec<UserType>().lua_name().dot(name);
+        provide_assist(full_name, value);
+        return luaprovide(full_name, l, std::forward<T>(value));
     }
 
     template <typename UserType, typename NameT, typename F1, typename F2, typename... Fs>
-    auto provide_member(NameT, F1&& function1, F2&& function2, Fs&&... functions) {
-        if (generate_assist_file)
-            provide_assist_for_member_function<UserType, NameT, F1, F2, Fs...>();
-
+    auto provide_member(const NameT& name, F1&& function1, F2&& function2, Fs&&... functions) {
+        auto full_name = type_registry::get_typespec<UserType>().lua_name().dot(name);
+        provide_assist<F1, F2, Fs...>(full_name);
         return luaprovide_overloaded(type_registry::get_typespec<UserType>().lua_name().dot(NameT{}),
                                       l,
                                       std::forward<F1>(function1),
@@ -201,7 +193,8 @@ public:
     void set_member_table(member_table<UserType> table) {
         if (generate_assist_file) {
             auto class_name = type_registry::get_typespec<UserType>().lua_name();
-            for (auto& [field_name, _] : table) assist.field(std::string(class_name) + '.' + field_name);
+            for (auto& [field_name, _] : table)
+                provide_assist(class_name.dot(field_name));
         }
 
         provide_member<UserType>(LUA_TNAME("__index"), [this, table](const UserType& data, const std::string& field) {
@@ -277,13 +270,14 @@ public:
     }
 
     std::string generate_assist() const {
-        return assist.generate();
+        assist_printer_visitor visitor;
+        annot.traverse(visitor);
+        return visitor.result();
     }
 
-    template <typename... Ts>
-    void annotate_args(Ts&&... argument_names) {
+    void annotate(const annotation_spec& annotation) {
         if (generate_assist_file)
-            assist.annotate_args(std::forward<Ts>(argument_names)...);
+            annot.annotate(annotation);
     }
 
 private:
@@ -297,87 +291,53 @@ private:
             lua_setfield(l, -2, "__index");
             lua_pop(l, 1);
 
-            if (generate_assist_file)
-                assist.field(type_registry::get_typespec<type>().lua_name(), true);
-
             if constexpr (requires { usertype_method_loader<type>(); })
                 usertype_method_loader<type>()(*this);
         });
     }
 
-    template <typename NameT, typename... Ts>
-    void provide_assist() {
-        if constexpr (NameT{} == LUA_TNAME("__gc") || NameT{} == LUA_TNAME("__index") ||
-                      NameT{} == LUA_TNAME("__newindex"))
-            return;
-
-        auto push_assist = [this]<typename T>(details::lua_ttype<T>) {
-            using type = std::decay_t<T>;
-
-            if constexpr (LuaFunctionLike<type>) {
-                using return_t       = typename details::lua_function_traits<type>::return_t;
-                constexpr auto arity = details::lua_function_traits<type>::arity;
-                if constexpr (type_registry::get_index<return_t>() != type_registry::no_index)
-                    assist.function(
-                        NameT{}, arity, std::string(type_registry::get_typespec<return_t>().lua_name()));
-                else
-                    assist.function(NameT{}, arity);
-                return;
-            }
-            if constexpr (LuaMemberFunction<type>) {
-                using return_t       = typename details::lua_member_function_traits<type>::return_t;
-                constexpr auto arity = details::lua_member_function_traits<type>::arity;
-                constexpr auto class_name =
-                    type_registry::get_typespec<typename details::lua_member_function_traits<type>::class_t>()
-                        .lua_name();
-
-                if constexpr (type_registry::get_index<return_t>() != type_registry::no_index)
-                    assist.member_function(class_name,
-                                           NameT{},
-                                           arity,
-                                           std::string(type_registry::get_typespec<return_t>().lua_name()));
-                else
-                    assist.member_function(class_name, NameT{}, arity);
-                return;
-            }
-
-            assist.field(NameT{});
-        };
-
-        (push_assist(details::lua_ttype<Ts>()), ...);
+    bool assist_allowed(const auto& name) {
+        std::string n = name;
+        return generate_assist_file && !(n.ends_with("__gc") || n.ends_with("__index") || n.ends_with("__newindex"));
     }
 
-    template <typename ClassT, typename NameT, typename... Ts>
-    void provide_assist_for_member_function() {
-        if constexpr (NameT{} == LUA_TNAME("__gc") || NameT{} == LUA_TNAME("__index") ||
-                      NameT{} == LUA_TNAME("__newindex"))
+    template <typename...>
+    struct name_fixer {
+        auto operator()(const auto& name) const {
+            return name;
+        }
+    };
+
+    template <typename T, typename... Ts> requires LuaMemberFunction<std::decay_t<T>>
+    struct name_fixer<T, Ts...> {
+        auto operator()(const auto& name) const {
+            return type_registry::get_typespec<typename details::lua_member_function_traits<std::decay_t<T>>::class_t>()
+                .lua_name()
+                .dot(name);
+        }
+    };
+
+    template <typename... Ts>
+    void provide_assist(const auto& name) {
+        auto full_name = name_fixer<Ts...>{}(name);
+        if (!assist_allowed(full_name))
             return;
+        annot.provide_value<std::remove_reference_t<Ts>...>(full_name);
+    }
 
-        auto push_assist = [this]<typename T>(details::lua_ttype<T>) {
-            using type                = std::decay_t<T>;
-            using return_t            = typename details::lua_function_traits<type>::return_t;
-            constexpr auto arity      = details::lua_function_traits<type>::arity;
-            constexpr auto class_name = type_registry::get_typespec<std::decay_t<ClassT>>().lua_name();
-
-            std::optional<std::string> result_metatable;
-            if constexpr (type_registry::get_index<return_t>() != type_registry::no_index)
-                result_metatable.emplace(type_registry::get_typespec<return_t>().lua_name());
-
-            /* Check if the first argument has ClassT type */
-            constexpr bool captured_self = std::is_same_v<
-                std::decay_t<std::remove_pointer_t<decltype(details::lua_function_traits<T>::template arg_type<0>().type())>>,
-                std::decay_t<ClassT>>;
-            assist.member_function(
-                class_name, NameT{}, arity - (captured_self ? 1U : 0U), result_metatable, captured_self);
-        };
-        (push_assist(details::lua_ttype<Ts>()), ...);
+    template <typename T, typename... Ts>
+    void provide_assist(const auto& name, const T& value) {
+        auto full_name = name_fixer<T, Ts...>{}(name);
+        if (!assist_allowed(full_name))
+            return;
+        annot.provide_value<T, std::remove_reference_t<Ts>...>(full_name, value);
     }
 
 private:
     lua_State* l;
 
-    bool generate_assist_file = false;
-    assist_gen assist;
+    annotator annot;
+    bool      generate_assist_file = false;
 };
 
 } // namespace luacpp

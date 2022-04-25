@@ -25,11 +25,11 @@ set(_src_headers
     src/luacpp_basic.hpp
     src/luacpp_utils.hpp
     src/luacpp_details.hpp
-    src/luacpp_assist_gen.hpp
     src/luacpp_member_table.hpp
     src/luacpp_usertype_registry.hpp
     src/luacpp_integral_constant.hpp
     src/luacpp_parse_int.hpp
+    src/luacpp_annotations.hpp
 )
 
 if (NOT DEFINED LIB_INSTALL_DIR)

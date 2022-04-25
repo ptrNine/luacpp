@@ -794,33 +794,28 @@ namespace details
     template <typename T>
     struct lua_member_function_traits;
 
-    template <typename ReturnT, typename ClassT, typename... ArgsT>
-    struct lua_member_function_traits<ReturnT (ClassT::*)(ArgsT...)> : lua_function_traits<ReturnT (*)(ArgsT...)> {
+    template <bool IsConst, bool IsNoexcept, typename ReturnT, typename ClassT, typename... ArgsT>
+    struct lua_member_function_traits_base : lua_function_traits<ReturnT (*)(ArgsT...)> {
         using class_t                     = ClassT;
-        static constexpr bool is_const    = false;
-        static constexpr bool is_noexcept = false;
+        static constexpr bool is_const    = IsConst;
+        static constexpr bool is_noexcept = IsNoexcept;
     };
+
+    template <typename ReturnT, typename ClassT, typename... ArgsT>
+    struct lua_member_function_traits<ReturnT (ClassT::*)(ArgsT...)>
+        : lua_member_function_traits_base<false, false, ReturnT, ClassT, ArgsT...> {};
+
     template <typename ReturnT, typename ClassT, typename... ArgsT>
     struct lua_member_function_traits<ReturnT (ClassT::*)(ArgsT...) const>
-        : lua_function_traits<ReturnT (*)(ArgsT...)> {
-        using class_t                     = ClassT;
-        static constexpr bool is_const    = true;
-        static constexpr bool is_noexcept = false;
-    };
+        : lua_member_function_traits_base<true, false, ReturnT, ClassT, ArgsT...> {};
+
     template <typename ReturnT, typename ClassT, typename... ArgsT>
     struct lua_member_function_traits<ReturnT (ClassT::*)(ArgsT...) noexcept>
-        : lua_function_traits<ReturnT (*)(ArgsT...)> {
-        using class_t                     = ClassT;
-        static constexpr bool is_const    = false;
-        static constexpr bool is_noexcept = true;
-    };
+        : lua_member_function_traits_base<false, true, ReturnT, ClassT, ArgsT...> {};
+
     template <typename ReturnT, typename ClassT, typename... ArgsT>
     struct lua_member_function_traits<ReturnT (ClassT::*)(ArgsT...) const noexcept>
-        : lua_function_traits<ReturnT (*)(ArgsT...)> {
-        using class_t                     = ClassT;
-        static constexpr bool is_const    = true;
-        static constexpr bool is_noexcept = true;
-    };
+        : lua_member_function_traits_base<true, true, ReturnT, ClassT, ArgsT...> {};
 
     template <size_t>
     struct lua_nttp_tag {};

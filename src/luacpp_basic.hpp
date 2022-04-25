@@ -64,78 +64,6 @@ constexpr auto lua_tname_divide_result(T1, T2) {
     return lua_tname_divide_result_t<Success, T1, T2>{};
 }
 
-template <char... Cs>
-    requires(LuaValidNameChar<Cs>&&...)
-struct lua_tname {
-    static constexpr const char _storage[] = {Cs..., '\0'};
-
-    constexpr const char* data() const {
-        return _storage;
-    }
-
-    constexpr size_t size() const {
-        return sizeof...(Cs);
-    }
-
-    constexpr uint64_t hash() const {
-        uint64_t hsh = 14695981039346656037ULL;
-        (((hsh ^= Cs) *= 1099511628211ULL), ...);
-        return hsh;
-    }
-
-    template <typename StartT, typename SizeT = int_const<sizeof...(Cs) - StartT{}>>
-    constexpr auto substr(StartT, SizeT) const {
-        return []<size_t... Idxs>(std::index_sequence<Idxs...>) {
-            return lua_tname<_storage[StartT{} + Idxs]...>{};
-        }
-        (std::make_index_sequence<SizeT{}>());
-    }
-
-    template <typename CharT>
-    constexpr auto divide_by(CharT) const {
-        constexpr auto pos = []<size_t... Idxs>(std::index_sequence<Idxs...>) {
-            size_t p = 0;
-            ((_storage[sizeof...(Idxs) - Idxs - 1] == char(CharT{}) ? (p = (sizeof...(Idxs) - Idxs)) : (p)), ...);
-            return p - 1;
-            // return ((Cs == separator ? Idxs + 1 : 0) + ... + 1) - 2;
-        }
-        (std::make_index_sequence<sizeof...(Cs)>());
-
-        if constexpr (pos == size_t(-1))
-            return lua_tname_divide_result<false>(lua_tname<Cs...>{}, lua_tname<Cs...>{});
-        else
-            return lua_tname_divide_result<true>(substr(int_const<size_t(0)>{}, int_const<pos>{}),
-                                                 substr(int_const<pos + 1>{}, int_const<sizeof...(Cs) - (pos + 1)>{}));
-    }
-
-    template <char... Cs2>
-    constexpr auto operator+(lua_tname<Cs2...>) const {
-        return lua_tname<Cs..., Cs2...>{};
-    }
-
-    template <char... Cs2>
-    constexpr auto dot(lua_tname<Cs2...>) const {
-        return lua_tname<Cs..., '.', Cs2...>{};
-    }
-
-    operator std::string() const {
-        return {data(), size()};
-    }
-
-    constexpr operator std::string_view() const {
-        return {data(), size()};
-    }
-
-    template <char... Cs2>
-    constexpr bool operator==(const lua_tname<Cs2...>&&) const {
-        return std::is_same_v<lua_tname, lua_tname<Cs2...>>;
-    }
-    template <char... Cs2>
-    constexpr bool operator!=(const lua_tname<Cs2...>&&) const {
-        return !std::is_same_v<lua_tname, lua_tname<Cs2...>>;
-    }
-};
-
 struct lua_name {
     lua_name(std::string str): _storage(std::move(str)) {}
 
@@ -197,6 +125,93 @@ struct lua_name {
     }
 };
 
+template <char... Cs>
+    requires(LuaValidNameChar<Cs>&&...)
+struct lua_tname {
+    static constexpr const char _storage[] = {Cs..., '\0'};
+
+    constexpr const char* data() const {
+        return _storage;
+    }
+
+    constexpr size_t size() const {
+        return sizeof...(Cs);
+    }
+
+    constexpr uint64_t hash() const {
+        uint64_t hsh = 14695981039346656037ULL;
+        (((hsh ^= Cs) *= 1099511628211ULL), ...);
+        return hsh;
+    }
+
+    template <typename StartT, typename SizeT = int_const<sizeof...(Cs) - StartT{}>>
+    constexpr auto substr(StartT, SizeT) const {
+        return []<size_t... Idxs>(std::index_sequence<Idxs...>) {
+            return lua_tname<_storage[StartT{} + Idxs]...>{};
+        }
+        (std::make_index_sequence<SizeT{}>());
+    }
+
+    template <typename CharT>
+    constexpr auto divide_by(CharT) const {
+        constexpr auto pos = []<size_t... Idxs>(std::index_sequence<Idxs...>) {
+            size_t p = 0;
+            ((_storage[sizeof...(Idxs) - Idxs - 1] == char(CharT{}) ? (p = (sizeof...(Idxs) - Idxs)) : (p)), ...);
+            return p - 1;
+            // return ((Cs == separator ? Idxs + 1 : 0) + ... + 1) - 2;
+        }
+        (std::make_index_sequence<sizeof...(Cs)>());
+
+        if constexpr (pos == size_t(-1))
+            return lua_tname_divide_result<false>(lua_tname<Cs...>{}, lua_tname<Cs...>{});
+        else
+            return lua_tname_divide_result<true>(substr(int_const<size_t(0)>{}, int_const<pos>{}),
+                                                 substr(int_const<pos + 1>{}, int_const<sizeof...(Cs) - (pos + 1)>{}));
+    }
+
+    template <char... Cs2>
+    constexpr auto operator+(lua_tname<Cs2...>) const {
+        return lua_tname<Cs..., Cs2...>{};
+    }
+
+    template <char... Cs2>
+    constexpr auto dot(lua_tname<Cs2...>) const {
+        return lua_tname<Cs..., '.', Cs2...>{};
+    }
+
+    constexpr auto dot(std::string_view name) const {
+        return lua_name{std::string(*this) + '.' + std::string(name)};
+    }
+
+    operator std::string() const {
+        return {data(), size()};
+    }
+
+    constexpr operator std::string_view() const {
+        return {data(), size()};
+    }
+
+    template <char... Cs2>
+    constexpr bool operator==(const lua_tname<Cs2...>&&) const {
+        return std::is_same_v<lua_tname, lua_tname<Cs2...>>;
+    }
+    template <char... Cs2>
+    constexpr bool operator!=(const lua_tname<Cs2...>&&) const {
+        return !std::is_same_v<lua_tname, lua_tname<Cs2...>>;
+    }
+    bool operator==(const lua_name& name) const {
+        return std::string_view(*this) == name;
+    }
+    bool operator!=(const lua_name& name) const {
+        return std::string_view(*this) != name;
+    }
+    friend bool operator==(const lua_name& lhs, lua_tname<Cs...> rhs) {
+        return std::string_view(lhs) == rhs;
+    }
+    friend bool operator!=(const lua_name& lhs, lua_tname<Cs...> rhs) {
+        return std::string_view(lhs) != rhs;
+    }
+};
 
 #define LUA_TNAME(STR)                                                                                                 \
     []<size_t... Idxs>(std::index_sequence<Idxs...>) constexpr {                                                       \

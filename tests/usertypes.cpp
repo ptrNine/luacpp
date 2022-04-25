@@ -96,8 +96,14 @@ void lua_setup_usertypes(luactx& l) {
                                           /* lua_getsetez may be used for simple member cases */
                                           lua_getsetez(y),
                                           lua_getsetez(z)};
+    l.annotate({.comment = "the x value", .explicit_type = "number"});
+    l.annotate({.comment = "the y value", .explicit_type = "number"});
     l.set_member_table(memtable);
 
+    l.annotate({.comment = "default constructor (init xyz to zeros)"});
+    l.annotate({.comment = "copy constructor", .argument_names = {"vector"}});
+    l.annotate({.comment = "ctor init xyz to the specified value", .argument_names = {"value"}});
+    l.annotate({.comment = "xyz ctor", .argument_names = {"x", "y", "z"}});
     l.provide(
         LUA_TNAME("vec3.new"),
         [] { return luavec3(0); },
@@ -150,6 +156,67 @@ function test()
 end
 )";
 
+constexpr std::string_view assist_txt = R"(
+---@class vec3
+vec3 = {
+    ---@param a number
+    ---@param b vec3
+    ---@return vec3
+    __mul = function(a, b) end,
+    ---default constructor (init xyz to zeros)
+    ---@return vec3
+    new = function() end,
+    ---ctor init xyz to the specified value
+    ---@param value number
+    ---@return vec3
+    new = function(value) end,
+    ---xyz ctor
+    ---@param x number
+    ---@param y number
+    ---@param z number
+    ---@return vec3
+    new = function(x, y, z) end,
+    ---the x value
+    ---@type number
+    x = {},
+    ---the y value
+    ---@type number
+    y = {},
+    ---@type any
+    z = {},
+    __index = vec3
+}
+
+
+---@param a vec3
+---@return vec3
+function vec3:__add(a) end
+---@param a number
+---@return vec3
+function vec3:__div(a) end
+---@param a vec3
+---@return boolean
+function vec3:__eq(a) end
+---@param a number
+---@return vec3
+function vec3:__mul(a) end
+---@param a vec3
+---@return vec3
+function vec3:__sub(a) end
+---@return string
+function vec3:__tostring() end
+---@param a vec3
+---@return vec3
+function vec3:cross(a) end
+---@param a vec3
+---@return number
+function vec3:dot(a) end
+---@return number
+function vec3:magnitude() end
+---copy constructor
+---@return vec3
+function vec3:new() end)";
+
 TEST_CASE("usertypes") {
     SECTION("basic") {
         auto l = luactx(lua_code{code});
@@ -187,5 +254,10 @@ TEST_CASE("usertypes") {
         }
         REQUIRE(catched);
         REQUIRE(l.top() == top);
+    }
+    SECTION("assist generator") {
+        auto l = luactx(lua_code{code}, true);
+        lua_setup_usertypes(l);
+        REQUIRE(l.generate_assist() == assist_txt);
     }
 }
