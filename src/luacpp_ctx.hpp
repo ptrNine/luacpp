@@ -280,6 +280,14 @@ public:
             annot.annotate(annotation);
     }
 
+    void enable_implicit_assist(bool value = true) {
+        annot.enable_implicit_mode(value);
+    }
+
+    bool is_implicit_assist_enabled() const {
+        return annot.implicit_mode_enabled();
+    }
+
 private:
     void register_usertypes() {
         tforeach<typespec_list<0>>([this](auto typespec) {
