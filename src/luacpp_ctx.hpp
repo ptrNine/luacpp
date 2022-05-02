@@ -224,6 +224,18 @@ public:
             });
     }
 
+    template <typename UserType>
+    void set_ordered_member_table(ordered_member_table<UserType> table) {
+        member_table<UserType> tbl;
+        for (auto& [k, v] : table) tbl.insert_or_assign(k, std::move(v));
+        set_member_table(std::move(tbl));
+    }
+
+    template <typename UserType>
+    void set_member_table(ordered_member_table<UserType> table) {
+        set_ordered_member_table(std::move(table));
+    }
+
     template <typename T, typename NameT>
     decltype(auto) extract(NameT&& name) {
         return luaextract<T>(std::forward<NameT>(name), l);

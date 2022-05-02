@@ -1,6 +1,7 @@
 #pragma once
 
 #include <map>
+#include <vector>
 #include <string>
 
 #define lua_getsetez(lua_or_cpp_name)                                                                                  \
@@ -77,5 +78,8 @@ struct getset {
 
 template <typename T>
 using member_table = std::map<std::string, getset<T>>;
+
+template <typename T>
+using ordered_member_table = std::vector<std::pair<std::string, getset<T>>>;
 
 } // namespace luacpp

@@ -87,7 +87,7 @@ using namespace Catch::literals;
 using namespace luacpp;
 
 void lua_setup_usertypes(luactx& l) {
-    auto memtable = member_table<luavec3>{{"x",
+    auto memtable = ordered_member_table<luavec3>{{"x",
                                            /* Weird, put pretty flexible */
                                            {[](const luavec3& v, luactx& ctx) { ctx.push(v.x); },
                                             [](luavec3& v, luactx& ctx) {
