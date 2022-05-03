@@ -58,10 +58,25 @@ template <typename T>
 concept LuaTupleLikeOrRef = LuaTupleLike<std::decay_t<T>>;
 
 template <typename T>
+concept LuaStringOrIntegerRef = LuaStringLikeOrRef<T> || LuaNumberOrRef<T>;
+
+template <typename T>
+concept LuaMapLike = requires (T& v) {
+    {get<0>(*v.begin())} -> LuaStringOrIntegerRef;
+    {get<1>(*v.end())};
+    {v.find(get<0>(*v.begin()))};
+    {v.emplace(get<0>(*v.begin()), std::move(get<1>(*v.begin())))};
+    {v.size()} -> std::convertible_to<size_t>;
+} && !LuaRegisteredType<T>;
+
+template <typename T>
+concept LuaMapLikeOrRef = LuaMapLike<std::decay_t<T>>;
+
+template <typename T>
 concept LuaListLike = !LuaTupleLike<T> && !LuaStringLike<T> && requires(const T& v) {
     {begin(v)};
     {end(v)};
-} && !LuaRegisteredType<T>;
+} && !LuaRegisteredType<T> && !LuaMapLike<T>;
 
 template <typename T>
 concept LuaListLikeOrRef = LuaListLike<std::decay_t<T>>;
@@ -86,7 +101,7 @@ template <typename T>
 concept LuaStaticSettable = !LuaTupleLike<T> && !LuaStringLike<T> && !LuaPushBackable<T> && requires(T & v) {
     {v[0] = v[0]};
     { size(v) } -> std::convertible_to<size_t>;
-} && !LuaRegisteredType<T>;
+} && !LuaRegisteredType<T> && !LuaMapLike<T>;
 
 template <typename T>
 concept LuaStaticSettableOrRef = LuaStaticSettable<std::decay_t<T>>;
@@ -97,6 +112,8 @@ concept LuaStaticSettableOrRef = LuaStaticSettable<std::decay_t<T>>;
 void luapush(lua_State* l, const LuaOptionalLike auto& value);
 
 void luapush(lua_State* l, const LuaListLike auto& value);
+
+void luapush(lua_State* l, const LuaMapLike auto& value);
 
 void luapush(lua_State* l, const LuaTupleLike auto& value);
 
@@ -186,6 +203,16 @@ void luapush(lua_State* l, const LuaOptionalLike auto& value) {
         lua_pushnil(l);
     else
         luapush(l, *value);
+}
+
+void luapush(lua_State* l, const LuaMapLike auto& value) {
+    lua_createtable(l, int(value.size()), 0);
+
+    for (auto& [k, v] : value) {
+        luapush(l, k);
+        luapush(l, v);
+        lua_settable(l, -3);
+    }
 }
 
 void luapush(lua_State* l, const LuaListLike auto& value) {
@@ -359,6 +386,18 @@ namespace details
     bool _array_check(lua_State* l, int index_check) {
         return lua_type(l, -2) == LUA_TNUMBER && int(lua_tonumber(l, -2)) == index_check && luacheck<T>(l, -1);
     }
+
+    template <typename K, typename V>
+    auto _map_getnext(lua_State* l) {
+        auto k = luaget<K>(l, -2);
+        auto v = luaget<V>(l, -1);
+        return std::pair{k, v};
+    }
+
+    template <typename K, typename V>
+    auto _map_check(lua_State* l) {
+        return luacheck<K>(l, -2) && luacheck<V>(l, -1);
+    }
 } // namespace details
 
 template <LuaPushBackableOrRef T>
@@ -446,6 +485,56 @@ auto luaget(lua_State* l, int idx) {
 
     return result;
 }
+
+template <LuaMapLikeOrRef T>
+auto luaget(lua_State* l, int idx) {
+    if (lua_type(l, idx) != LUA_TTABLE)
+        throw errors::cast_error(l, idx, "this type can't be casted to C++ map-like container", __PRETTY_FUNCTION__);
+    std::decay_t<T> result;
+    using key_t   = std::decay_t<decltype(std::get<0>(*result.begin()))>;
+    using value_t = std::decay_t<decltype(std::get<1>(*result.begin()))>;
+
+    /* For using relative stack pos */
+    lua_pushvalue(l, idx);
+    lua_pushnil(l);
+
+    auto guard = exception_guard{[l] {
+        lua_pop(l, 3);
+    }};
+
+    while (lua_next(l, -2)) {
+        auto [k, v] = details::_map_getnext<key_t, value_t>(l);
+        result.emplace(std::move(k), std::move(v));
+        lua_pop(l, 1);
+    }
+
+    lua_pop(l, 1);
+
+    return result;
+}
+
+template <LuaMapLikeOrRef T>
+bool luacheck(lua_State* l, int idx) {
+    if (lua_type(l, idx) != LUA_TTABLE)
+        return false;
+
+    using key_t   = std::decay_t<decltype(std::get<0>(*std::declval<T>().begin()))>;
+    using value_t = std::decay_t<decltype(std::get<1>(*std::declval<T>().begin()))>;
+
+    lua_pushvalue(l, idx);
+    lua_pushnil(l);
+
+    bool result      = true;
+    while (result && lua_next(l, -2)) {
+        if (!details::_map_check<key_t, value_t>(l))
+            result = false;
+        lua_pop(l, 1);
+    }
+    lua_pop(l, 1);
+
+    return result;
+}
+
 
 namespace luacppdetails
 {

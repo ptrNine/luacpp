@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/catch_approx.hpp>
 #include <list>
+#include <map>
 
 using namespace Catch::literals;
 
@@ -266,6 +267,101 @@ TEST_CASE("basic_types") {
 
         l.provide(LUA_TNAME("cppfunc"), [](const vec& v) {
             REQUIRE(v == vec{"one", "two", "three", "four"});
+        });
+        l.extract<void()>(LUA_TNAME("call_cpp"))();
+
+        REQUIRE(top == l.top());
+    }
+
+    SECTION("table <=> map<string, vector<int>>") {
+        using map_t = std::map<std::string, std::vector<int>>;
+
+        auto l = luactx(lua_code{R"(
+            function check_map(test_v)
+                c = {one = {1, 2, 1, 1}, two = {2, 3, 2}}
+                assert(#c == #test_v)
+                assert(type(test_v) == "table")
+                for k,v in pairs(test_v) do
+                    cv = c[k]
+                    for i = 1, #v do
+                        assert(cv[i] == v[i])
+                    end
+                end
+                for k,v in pairs(c) do
+                    cv = test_v[k]
+                    for i = 1, #v do
+                        assert(cv[i] == v[i])
+                    end
+                end
+            end
+
+            function test(v)
+                return v
+            end
+
+            function call_cpp()
+                cppfunc({one = {1, 2, 1, 1}, two = {2, 3, 2}})
+            end
+        )"});
+        auto top = l.top();
+        auto map_v = map_t{{"one", {1, 2, 1, 1}}, {"two", {2, 3, 2}}};
+        l.extract<void(const map_t&)>(LUA_TNAME("check_map"))(map_v);
+
+        REQUIRE(l.extract<map_t(const map_t&)>(LUA_TNAME("test"))(map_v) == map_v);
+
+        l.provide(LUA_TNAME("cppfunc"), [&](const map_t& v) {
+            REQUIRE(v == map_v);
+        });
+        l.extract<void()>(LUA_TNAME("call_cpp"))();
+
+        REQUIRE(top == l.top());
+    }
+
+    SECTION("table <=> map<double, vector<string>>") {
+        using map_t = std::map<double, std::vector<std::string>>;
+
+        auto l = luactx(lua_code{R"(
+            function check_map(test_v)
+                c = {}
+                c[1.1] = {"a", "b"}
+                c[2.23] = {"z", "y", "x"}
+                c[-26] = {"lol"}
+                assert(#c == #test_v)
+                assert(type(test_v) == "table")
+                for k,v in pairs(test_v) do
+                    cv = c[k]
+                    for i = 1, #v do
+                        assert(cv[i] == v[i])
+                    end
+                end
+                for k,v in pairs(c) do
+                    cv = test_v[k]
+                    for i = 1, #v do
+                        assert(cv[i] == v[i])
+                    end
+                end
+            end
+
+            function test(v)
+                return v
+            end
+
+            function call_cpp()
+                c = {}
+                c[1.1] = {"a", "b"}
+                c[2.23] = {"z", "y", "x"}
+                c[-26] = {"lol"}
+                cppfunc(c)
+            end
+        )"});
+        auto top = l.top();
+        auto map_v = map_t{{1.1, {"a", "b"}}, {2.23, {"z", "y", "x"}}, {-26.0, {"lol"}}};
+        l.extract<void(const map_t&)>(LUA_TNAME("check_map"))(map_v);
+
+        REQUIRE(l.extract<map_t(const map_t&)>(LUA_TNAME("test"))(map_v) == map_v);
+
+        l.provide(LUA_TNAME("cppfunc"), [&](const map_t& v) {
+            REQUIRE(v == map_v);
         });
         l.extract<void()>(LUA_TNAME("call_cpp"))();
 
