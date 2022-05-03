@@ -8,6 +8,20 @@ constexpr bool approx_eq(T a, U b, E epsilon = std::numeric_limits<E>::epsilon()
     return std::fabs(a - b) <= ((std::fabs(a) < std::fabs(b) ? std::fabs(b) : std::fabs(a)) * epsilon);
 }
 
+struct string_like {
+    std::string str;
+    string_like(std::string_view s): str(s) {}
+    operator std::string_view() const {
+        return str;
+    }
+    bool operator==(const string_like& v) const {
+        return str == v.str;
+    }
+    std::string test() const {
+        return "test " + str;
+    }
+};
+
 template <typename T>
 struct vector3 {
     constexpr vector3() noexcept = default;
@@ -78,7 +92,7 @@ using luavec3 = vector3<double>;
 
 template <>
 struct luacpp::typespec_list_s<0> {
-    using type = std::tuple<typespec<luavec3, LUA_TNAME("vec3")>>;
+    using type = std::tuple<typespec<luavec3, LUA_TNAME("vec3")>, typespec<string_like, LUA_TNAME("string_like")>>;
 };
 
 #include "luacpp_ctx.hpp"
@@ -122,6 +136,8 @@ void lua_setup_usertypes(luactx& l) {
     l.provide_member<luavec3>(LUA_TNAME("__tostring"), [](const luavec3& v) {
         return std::to_string(v.x) + " " + std::to_string(v.y) + " " + std::to_string(v.z);
     });
+
+    l.provide(LUA_TNAME("test"), &string_like::test);
 }
 
 auto code = R"(
@@ -157,6 +173,10 @@ end
 )";
 
 constexpr std::string_view assist_txt = R"(
+---@class string_like
+string_like = {
+    __index = string_like
+}
 ---@class vec3
 vec3 = {
     ---@param a number
@@ -188,6 +208,8 @@ vec3 = {
 }
 
 
+---@return string
+function string_like:test() end
 ---@param a vec3
 ---@return vec3
 function vec3:__add(a) end
@@ -259,5 +281,10 @@ TEST_CASE("usertypes") {
         auto l = luactx(lua_code{code}, true);
         lua_setup_usertypes(l);
         REQUIRE(l.generate_assist() == assist_txt);
+    }
+    SECTION("registered string-like") {
+        auto l = luactx(lua_code{"function test_func(v) assert(v:test() == \"test kek\") end"});
+        lua_setup_usertypes(l);
+        l.extract<void(const string_like&)>(LUA_TNAME("test_func"))(string_like("kek"));
     }
 }

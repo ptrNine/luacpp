@@ -273,6 +273,38 @@ TEST_CASE("basic_types") {
         REQUIRE(top == l.top());
     }
 
+    SECTION("table <=> list<string_like>") {
+        struct string_like {
+            std::string str;
+            string_like(std::string_view s): str(s) {}
+            operator std::string_view() const {
+                return str;
+            }
+            bool operator==(const string_like& v) const {
+                return str == v.str;
+            }
+        };
+
+        using vec = std::list<string_like>;
+
+        auto l = luactx(lua_code{TEST_CODE("{ \"one\", \"two\", \"three\", \"four\" }")});
+        auto top = l.top();
+        l.extract<void(const vec&)>(LUA_TNAME("check_array"))({{"one"}, {"two"}, {"three"}, {"four"}});
+
+        REQUIRE(l.extract<vec(const vec&)>(LUA_TNAME("test"))(vec{{"aa"}, {"bb"}, {"cc"}}) ==
+                vec{{"aa"}, {"bb"}, {"cc"}});
+
+        l.provide(LUA_TNAME("glob"), vec{{"hello"}, {", "}, {"world"}, {"!"}});
+        REQUIRE(l.extract<vec()>(LUA_TNAME("test_glob"))() == vec{{"hello"}, {", "}, {"world"}, {"!"}});
+
+        l.provide(LUA_TNAME("cppfunc"), [](const vec& v) {
+            REQUIRE(v == vec{{"one"}, {"two"}, {"three"}, {"four"}});
+        });
+        l.extract<void()>(LUA_TNAME("call_cpp"))();
+
+        REQUIRE(top == l.top());
+    }
+
     SECTION("table <=> map<string, vector<int>>") {
         using map_t = std::map<std::string, std::vector<int>>;
 

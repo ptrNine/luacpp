@@ -33,7 +33,9 @@ template <typename T>
 concept LuaNumberOrRef = LuaNumber<std::decay_t<T>>;
 
 template <typename T>
-concept LuaStringLike = std::same_as<T, std::string> || std::same_as<T, std::string_view>;
+concept LuaStringLike = (!LuaRegisteredType<T>) && std::convertible_to<T, std::string_view> &&
+                        (std::is_constructible_v<T, std::string_view> ||
+                         std::is_constructible_v<T, const char*, size_t>);
 
 template <typename T>
 concept LuaStringLikeOrRef = LuaStringLike<std::decay_t<T>>;
@@ -188,7 +190,7 @@ inline void luapush(lua_State* l, std::nullptr_t) {
 }
 
 void luapush(lua_State* l, const LuaStringLike auto& value) {
-    lua_pushlstring(l, value.data(), value.size());
+    lua_pushlstring(l, std::string_view(value).data(), std::string_view(value).size());
 }
 
 void luapush(lua_State* l, const auto* pointer_value) {
@@ -348,13 +350,16 @@ bool luacheck(lua_State* l, int idx) {
     return lua_type(l, idx) == LUA_TNIL || luacheck<std::decay_t<decltype(*T{})>>(l, idx);
 }
 
-template <typename T>
-    requires std::same_as<std::decay_t<T>, std::string>
+template <LuaStringLikeOrRef T>
 auto luaget(lua_State* l, int idx) {
     if (lua_type(l, idx) == LUA_TSTRING) {
         size_t len;
         auto   str = lua_tolstring(l, idx, &len);
-        return std::string(str, len);
+        if constexpr (std::is_same_v<std::decay_t<T>, std::string>)
+            return std::string(str, len);
+        if constexpr (std::is_constructible_v<std::decay_t<T>, const char*, size_t>)
+            return std::decay_t<T>(str, len);
+        return std::decay_t<T>(std::string(str, len));
     }
     else
         throw errors::cast_error(l, idx, "this type can't be casted to C++ std::string", __PRETTY_FUNCTION__);
