@@ -94,7 +94,9 @@ struct assist_function : public assist_value_base {
 
     template <typename T>
     static std::string get_typename() {
-        if constexpr (LuaNumber<T>)
+        if constexpr (LuaInteger<T>)
+            return "integer";
+        if constexpr (LuaFloat<T>)
             return "number";
         if constexpr (LuaStringLike<T>)
             return "string";
@@ -342,7 +344,13 @@ private:
             .first->second.get();
     }
 
-    template <LuaNumber>
+    template <LuaInteger>
+    assist_value_base* provide_value_impl(const auto& name, const std::string& strvalue, assist_table* table) {
+        return table->values.insert_or_assign(name, std::make_unique<assist_value>("integer", name, strvalue))
+            .first->second.get();
+    }
+
+    template <LuaFloat>
     assist_value_base* provide_value_impl(const auto& name, const std::string& strvalue, assist_table* table) {
         return table->values.insert_or_assign(name, std::make_unique<assist_value>("number", name, strvalue))
             .first->second.get();
