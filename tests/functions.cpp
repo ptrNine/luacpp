@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/catch_approx.hpp>
-#include "luacpp_ctx.hpp"
+
+#include "lua.hpp"
 
 using namespace Catch::literals;
 using namespace luacpp;

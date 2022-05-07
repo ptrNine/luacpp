@@ -1,101 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/catch_approx.hpp>
 
-#include <cmath>
-
-template <typename T, typename U, typename E = decltype(T{} + U{})>
-constexpr bool approx_eq(T a, U b, E epsilon = std::numeric_limits<E>::epsilon() * 100) {
-    return std::fabs(a - b) <= ((std::fabs(a) < std::fabs(b) ? std::fabs(b) : std::fabs(a)) * epsilon);
-}
-
-struct string_like {
-    std::string str;
-    string_like(std::string_view s): str(s) {}
-    operator std::string_view() const {
-        return str;
-    }
-    bool operator==(const string_like& v) const {
-        return str == v.str;
-    }
-    std::string test() const {
-        return "test " + str;
-    }
-};
-
-template <typename T>
-struct vector3 {
-    constexpr vector3() noexcept = default;
-    constexpr vector3(T v) noexcept: x(v), y(v), z(v) {}
-    constexpr vector3(T ix, T iy, T iz) noexcept: x(ix), y(iy), z(iz) {}
-
-    template <typename U>
-    constexpr auto operator+(const vector3<U>& v) const noexcept {
-        return vector3{x + v.x, y + v.y, z + v.z};
-    }
-
-    template <typename U>
-    constexpr auto operator-(const vector3<U>& v) const noexcept {
-        return vector3{x - v.x, y - v.y, z - v.z};
-    }
-
-    template <typename U>
-    constexpr auto operator*(U n) const noexcept {
-        return vector3{x * n, y * n, z * n};
-    }
-
-    template <typename U>
-    friend constexpr auto operator*(U n, const vector3& vec) noexcept {
-        return vector3{vec.x * n, vec.y * n, vec.z * n};
-    }
-
-    template <typename U>
-    constexpr auto operator/(U n) const noexcept {
-        return vector3{x / n, y / n, z / n};
-    }
-
-    template <typename U>
-    constexpr auto dot(const vector3<U>& v) const noexcept {
-        return x * v.x + y * v.y + z * v.z;
-    }
-
-    constexpr auto magnitude2() const noexcept {
-        return dot(*this);
-    }
-
-    auto magnitude() const noexcept {
-        auto m2 = magnitude2();
-        return std::sqrt(sizeof(T) > 4 ? double(m2) : float(m2));
-    }
-
-    template <typename U>
-    constexpr auto cross(const vector3<U>& v) const noexcept {
-        return vector3{
-            y * v.z - z * v.y,
-            z * v.x - x * v.z,
-            x * v.y - y * v.x
-        };
-    }
-
-    template <typename U>
-    constexpr bool operator==(const vector3<U>& v) const noexcept {
-        return approx_eq(x, v.x) && approx_eq(y, v.y) && approx_eq(z, v.z);
-    }
-
-    T x, y, z;
-};
-
-
-#include "luacpp_basic.hpp"
-
-
-using luavec3 = vector3<double>;
-
-template <>
-struct luacpp::typespec_list_s<0> {
-    using type = std::tuple<typespec<luavec3, LUA_TNAME("vec3")>, typespec<string_like, LUA_TNAME("string_like")>>;
-};
-
-#include "luacpp_ctx.hpp"
+#include "lua.hpp"
 
 using namespace Catch::literals;
 using namespace luacpp;
@@ -114,10 +20,10 @@ void lua_setup_usertypes(luactx& l) {
     l.annotate({.comment = "the y value", .explicit_type = "number"});
     l.set_member_table(memtable);
 
-    l.annotate({.comment = "default constructor (init xyz to zeros)"});
-    l.annotate({.comment = "copy constructor", .argument_names = {"vector"}});
-    l.annotate({.comment = "ctor init xyz to the specified value", .argument_names = {"value"}});
-    l.annotate({.comment = "xyz ctor", .argument_names = {"x", "y", "z"}});
+    l.annotate({.comment = "constructor"});
+    l.annotate({.argument_names = {"vector"}});
+    l.annotate({.argument_names = {"value"}});
+    l.annotate({.argument_names = {"x", "y", "z"}});
     l.provide(
         LUA_TNAME("vec3.new"),
         [] { return luavec3(0); },
@@ -172,72 +78,67 @@ function test()
 end
 )";
 
-constexpr std::string_view assist_txt = R"(
+constexpr auto assist_txt = R"(
 ---@class string_like
 string_like = {
+    ---@param self string_like
+    ---@return string
+    test = function(self) end,
     __index = string_like
 }
 ---@class vec3
 vec3 = {
+    ---@param self vec3
+    ---@param a vec3
+    ---@return vec3
+    __add = function(self, a) end,
+    ---@param self vec3
     ---@param a number
-    ---@param b vec3
     ---@return vec3
-    __mul = function(a, b) end,
-    ---default constructor (init xyz to zeros)
+    __div = function(self, a) end,
+    ---@param self vec3
+    ---@param a vec3
+    ---@return boolean
+    __eq = function(self, a) end,
+    ---@param self vec3
+    ---@param a number
     ---@return vec3
+    ---@overload fun(a:number,b:vec3):vec3
+    __mul = function(self, a) end,
+    ---@param self vec3
+    ---@param a vec3
+    ---@return vec3
+    __sub = function(self, a) end,
+    ---@param self vec3
+    ---@return string
+    __tostring = function(self) end,
+    ---@param self vec3
+    ---@param a vec3
+    ---@return vec3
+    cross = function(self, a) end,
+    ---@param self vec3
+    ---@param a vec3
+    ---@return number
+    dot = function(self, a) end,
+    ---@param self vec3
+    ---@return number
+    magnitude = function(self) end,
+    ---constructor
+    ---@return vec3
+    ---@overload fun(vector:vec3):vec3
+    ---@overload fun(value:number):vec3
+    ---@overload fun(x:number,y:number,z:number):vec3
     new = function() end,
-    ---ctor init xyz to the specified value
-    ---@param value number
-    ---@return vec3
-    new = function(value) end,
-    ---xyz ctor
-    ---@param x number
-    ---@param y number
-    ---@param z number
-    ---@return vec3
-    new = function(x, y, z) end,
     ---the x value
     ---@type number
-    x = {},
+    x = nil,
     ---the y value
     ---@type number
-    y = {},
+    y = nil,
     ---@type any
-    z = {},
+    z = nil,
     __index = vec3
-}
-
-
----@return string
-function string_like:test() end
----@param a vec3
----@return vec3
-function vec3:__add(a) end
----@param a number
----@return vec3
-function vec3:__div(a) end
----@param a vec3
----@return boolean
-function vec3:__eq(a) end
----@param a number
----@return vec3
-function vec3:__mul(a) end
----@param a vec3
----@return vec3
-function vec3:__sub(a) end
----@return string
-function vec3:__tostring() end
----@param a vec3
----@return vec3
-function vec3:cross(a) end
----@param a vec3
----@return number
-function vec3:dot(a) end
----@return number
-function vec3:magnitude() end
----copy constructor
----@return vec3
-function vec3:new() end)";
+})";
 
 TEST_CASE("usertypes") {
     SECTION("basic") {

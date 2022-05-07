@@ -3,9 +3,9 @@
 #include <list>
 #include <map>
 
-using namespace Catch::literals;
+#include "lua.hpp"
 
-#include "luacpp_ctx.hpp"
+using namespace Catch::literals;
 using namespace luacpp;
 
 #define TEST_CODE(CHECK_VALUE)                                                                                         \

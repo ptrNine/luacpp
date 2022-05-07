@@ -17,7 +17,6 @@ namespace luacpp
 struct assist_value;
 struct assist_table;
 struct assist_function;
-struct assist_overloaded_function;
 struct assist_class_declaration;
 
 class assist_visitor {
@@ -26,7 +25,6 @@ public:
     virtual void visit(const assist_value&) = 0;
     virtual void visit(const assist_table&) = 0;
     virtual void visit(const assist_function&) = 0;
-    virtual void visit(const assist_overloaded_function&) = 0;
     virtual void visit(const assist_class_declaration&) = 0;
 };
 
@@ -139,20 +137,18 @@ struct assist_function : public assist_value_base {
     };
 
     template <typename ReturnT, typename... ArgsT>
-    assist_function(std::string name,
-                    const details::lua_function_traits<ReturnT (*)(ArgsT...)>&,
-                    const std::string&              holder_table_name,
-                    const std::vector<std::string>& argument_names = {}):
-        assist_value_base(std::move(name)),
-        parameters{parameter_t(get_typename<std::decay_t<ArgsT>>())...},
-        return_type(get_typename<std::decay_t<ReturnT>>()),
-        self_allowed(member_function_check<std::decay_t<ArgsT>...>{}(holder_table_name)) {
+    void add_overload(const details::lua_function_traits<ReturnT (*)(ArgsT...)>&,
+                      const std::vector<std::string>& argument_names) {
+        overloads.emplace_back(std::vector<parameter_t>{parameter_t(get_typename<std::decay_t<ArgsT>>())...},
+                               get_typename<std::decay_t<ReturnT>>(),
+                               member_function_check<std::decay_t<ArgsT>...>{}(holder_table_name));
+        auto& overload = overloads.back();
 
-        std::string name_c     = self_allowed ? "self" : "a";
+        std::string name_c     = overload.self_allowed ? "self" : "a";
         auto        arg_name_b = argument_names.begin();
         auto        arg_name_e = argument_names.end();
 
-        for (auto& param : parameters) {
+        for (auto& param : overload.parameters) {
             if (arg_name_b != arg_name_e) {
                 param.name = *arg_name_b;
                 ++arg_name_b;
@@ -167,6 +163,15 @@ struct assist_function : public assist_value_base {
         }
     }
 
+    template <typename ReturnT, typename... ArgsT>
+    assist_function(std::string name,
+                    const details::lua_function_traits<ReturnT (*)(ArgsT...)>& f,
+                    std::string                     iholder_table_name,
+                    const std::vector<std::string>& argument_names = {}):
+        assist_value_base(std::move(name)), holder_table_name(std::move(iholder_table_name)) {
+        add_overload(f, argument_names);
+    }
+
     std::string info() const final {
         return name + ": function";
     }
@@ -175,27 +180,14 @@ struct assist_function : public assist_value_base {
         visitor.visit(*this);
     }
 
-    bool is_member_function() const final {
-        return self_allowed;
-    }
+    struct overload_t {
+        std::vector<parameter_t> parameters;
+        std::string              return_type;
+        bool                     self_allowed;
+    };
 
-    std::vector<parameter_t> parameters;
-    std::string              return_type;
-    bool                     self_allowed;
-};
-
-struct assist_overloaded_function : public assist_value_base {
-    assist_overloaded_function(std::string name): assist_value_base(std::move(name)) {}
-
-    std::string info() const final {
-        return name + ": overloded function";
-    }
-
-    void accept(assist_visitor& visitor) const final {
-        visitor.visit(*this);
-    }
-
-    std::vector<assist_function> overloads;
+    std::string             holder_table_name;
+    std::vector<overload_t> overloads;
 };
 
 struct assist_class_declaration : public assist_table {
@@ -278,7 +270,7 @@ public:
 
     template <typename... Ts>
     void provide_value(const auto& name) {
-        provide_value_main<Ts...>(name, "{}", &global);
+        provide_value_main<Ts...>(name, "nil", &global);
     }
 
     template <typename T, typename... Ts>
@@ -315,7 +307,7 @@ private:
 
     std::string strcast(const LuaNumber auto& num) {
         if (!store_value_enabled())
-            return "{}";
+            return "nil";
 
         std::stringstream ss;
         ss << num;
@@ -324,14 +316,14 @@ private:
 
     std::string strcast(const LuaStringLike auto& str) {
         if (!store_value_enabled())
-            return "{}";
+            return "nil";
 
         return std::string(str);
     }
 
     std::string strcast(const LuaOptionalLike auto& opt) {
         if (!store_value_enabled())
-            return "{}";
+            return "nil";
 
         if (opt)
             return strcast(*opt);
@@ -383,41 +375,27 @@ private:
     template <typename... Ts>
         requires(sizeof...(Ts) == 0) || ((LuaTupleLike<Ts> || LuaListLike<Ts>) && ... && true)
     assist_value_base* provide_value_impl(const auto& name, const std::string&, assist_table* table) {
-        return table->values.insert_or_assign(name, std::make_unique<assist_value>(get_type("any"), name, "{}"))
+        return table->values.insert_or_assign(name, std::make_unique<assist_value>(get_type("any"), name))
             .first->second.get();
     }
 
     template <typename FT, typename... FTs>
     assist_value_base* provide_func_impl(const auto& name, FT ft, assist_table* table, FTs... fts) {
-        if constexpr (sizeof...(FTs) == 0) {
-            return table->values
+        auto func = static_cast<assist_function*>(
+            table->values
                 .insert_or_assign(name, std::make_unique<assist_function>(name, ft, table->name, argument_names()))
-                .first->second.get();
-        }
-        else {
-            auto overloaded_function = static_cast<assist_overloaded_function*>( // NOLINT
-                table->values
-                    .insert_or_assign(
-                        name,
-                        std::make_unique<assist_overloaded_function>(table == &global ? std::string(name) : "table"))
-                    .first->second.get());
+                .first->second.get());
 
-            auto& overloads = overloaded_function->overloads;
-
-            overloads.emplace_back(name, ft, table->name, argument_names());
-            overloads.back().comment = comment();
-
-            auto push_f = [&](auto trait) {
+        if constexpr (sizeof...(FTs) > 0) {
+            auto add_overload = [this](assist_function* func, const auto& ft) {
                 if (!annotations.empty())
                     annotations.pop();
-
-                overloads.emplace_back(name, trait, table->name, argument_names());
-                overloads.back().comment = comment();
+                func->add_overload(ft, argument_names());
             };
-            (push_f(fts), ...);
-
-            return overloaded_function;
+            (add_overload(func, fts), ...);
         }
+
+        return func;
     }
 
     template <typename F>
@@ -466,9 +444,10 @@ private:
                 std::move(right), strvalue, static_cast<assist_table*>(found->second.get())); // NOLINT
             return;
         }
+        auto comment_str = comment();
         auto new_value = provide_value_impl<Ts...>(name, strvalue, table);
 
-        new_value->comment = comment();
+        new_value->comment = std::move(comment_str);
 
         if (!annotations.empty())
             annotations.pop();
@@ -486,154 +465,127 @@ private:
 
 class assist_printer_visitor : public assist_visitor {
 public:
-    void append_comment(const assist_value_base& value, bool functions_text = false) {
+    void append_comment(const assist_value_base& value) {
         if (!value.comment.empty()) {
-            append_text(functions_text, "---", value.comment, '\n');
-            put_indent(functions_text);
+            append_text("---", value.comment, '\n');
+            put_indent();
         }
     }
 
     void visit(const assist_value& value) final {
-        append_text(false, '\n');
+        append_text('\n');
         put_indent();
-        append_comment(value, false);
-        append_text(false, "---@type ", value.type, '\n');
+        append_comment(value);
+        append_text("---@type ", value.type, '\n');
         put_indent();
-        append_text(false, value.name, " = ", value.value.empty() ? "nil" : value.value);
+        append_text(value.name, " = ", value.value.empty() ? "nil" : value.value);
     }
 
     void visit(const assist_table& table) final {
-        append_text(false, '\n');
+        append_text('\n');
         put_indent();
-        append_comment(table, false);
-        append_text(false, table.name, " = {");
+        append_comment(table);
+        append_text(table.name, " = {");
         increment_indent();
 
         bool was_inner = false;
         for (auto& [_, inner] : table.values) {
             inner->accept(*this);
-            append_text(false, ',');
+            append_text(',');
             was_inner = true;
         }
         if (was_inner)
-            var_text.pop_back();
+            text.pop_back();
 
-        append_text(false, '\n');
+        append_text('\n');
         decrement_indent();
-        append_text(false, "}");
+        append_text("}");
     }
 
     void visit(const assist_function& function) final {
-        auto func_location = function.self_allowed;
+        append_text('\n');
+        put_indent();
+        append_comment(function);
 
-        append_text(func_location, '\n');
-        put_indent(func_location);
-        append_comment(function, func_location);
+        auto& overload1 = function.overloads.front();
 
-        auto param_b = function.parameters.begin();
-        auto param_e = function.parameters.end();
-        if (function.self_allowed)
-            ++param_b;
-        for (auto b = param_b; b < param_e; ++b) {
-            append_text(func_location, "---@param ", b->name, ' ', b->type, '\n');
-            put_indent(func_location);
+        for (auto& param : overload1.parameters) {
+            append_text("---@param ", param.name, ' ', param.type, '\n');
+            put_indent();
         }
-        append_text(func_location, "---@return ", function.return_type, '\n');
-        put_indent(func_location);
+        append_text("---@return ", overload1.return_type, '\n');
+        put_indent();
 
-        if (function.self_allowed) {
-            append_text(true, "function ", function.parameters.front().type, ':', function.name, '(');
-            for (auto b = param_b; b < param_e; ++b)
-                append_text(true, b->name, ", ");
-            if (param_b < param_e)
-                func_text.resize(func_text.size() - 2);
-        }
-        else {
-            append_text(false, function.name, " = function(");
-            for (auto b = param_b; b < param_e; ++b)
-                append_text(false, b->name, ", ");
-            if (param_b != param_e)
-                var_text.resize(var_text.size() - 2);
-        }
-        append_text(func_location, ") end");
-    }
-
-    void visit(const assist_overloaded_function& overloaded_function) final {
-        bool need_comma = overloaded_function.name == "table";
-        bool insert_was = false;
-
-        for (auto& function : overloaded_function.overloads) {
-            function.accept(*this);
-            if (need_comma && !function.self_allowed) {
-                append_text(false, ',');
-                insert_was = true;
+        if (function.overloads.size() > 1) {
+            for (size_t i = 1 ; i < function.overloads.size(); ++i) {
+                auto& overload = function.overloads[i];
+                append_text("---@overload fun(");
+                for (auto& param : overload.parameters)
+                    append_text(param.name, ':', param.type, ',');
+                if (!overload.parameters.empty())
+                    text.pop_back();
+                append_text("):", overload.return_type, '\n');
+                put_indent();
             }
         }
 
-        if (insert_was)
-            var_text.pop_back();
+        append_text(function.name, " = function(");
+        for (auto& param : overload1.parameters)
+            append_text(param.name, ", ");
+        if (!overload1.parameters.empty())
+            text.resize(text.size() - 2);
+        append_text(") end");
     }
 
     void visit(const assist_class_declaration& class_declaration) final {
-        append_text(false, '\n');
+        append_text('\n');
 
         put_indent();
-        append_comment(class_declaration, false);
-        append_text(false, "---@class ", class_declaration.name, '\n');
+        append_comment(class_declaration);
+        append_text("---@class ", class_declaration.name, '\n');
         put_indent();
-        append_text(false, class_declaration.name, " = {");
+        append_text(class_declaration.name, " = {");
         increment_indent();
 
         for (auto& [_, inner] : class_declaration.values) {
             inner->accept(*this);
             if (!inner->is_member_function())
-                append_text(false, ',');
+                append_text(',');
         }
 
-        append_text(false, '\n');
+        append_text('\n');
         put_indent();
-        append_text(false, "__index = ", class_declaration.name, '\n');
+        append_text("__index = ", class_declaration.name, '\n');
         decrement_indent();
-        append_text(false, "}");
+        append_text("}");
     }
 
-    void put_indent(bool functions_location = false) {
-        if (functions_location)
-            func_text.resize(func_text.size() + func_indent, ' ');
+    void put_indent() {
+        text.resize(text.size() + indent, ' ');
+    }
+
+    void increment_indent() {
+        indent += 4;
+    }
+
+    void decrement_indent() {
+        if (indent >= 4)
+            indent -= 4;
         else
-            var_text.resize(var_text.size() + var_indent, ' ');
+            indent = 0;
     }
 
-    void increment_indent(bool functions_location = false) {
-        (functions_location ? func_indent : var_indent) += 4;
+    void append_text(auto&&... txt) {
+        ((text += txt), ...);
     }
 
-    void decrement_indent(bool functions_location = false) {
-        auto& ind = (functions_location ? func_indent : var_indent);
-        if (ind >= 4)
-            ind -= 4;
-        else
-            ind = 0;
-    }
-
-    void append_text(bool functions_location, auto&&... text) {
-        if (functions_location)
-            ((func_text += text), ...);
-        else
-            ((var_text += text), ...);
-    }
-
-    std::string result() const {
-        std::string res = var_text;
-        res += "\n\n";
-        res += func_text;
-        return res;
+    [[nodiscard]]
+    const std::string& result() const {
+        return text;
     }
 
 private:
-    size_t      var_indent  = 0;
-    size_t      func_indent = 0;
-    std::string var_text;
-    std::string func_text;
+    size_t      indent  = 0;
+    std::string text;
 };
 } // namespace luacpp
