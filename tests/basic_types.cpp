@@ -2,6 +2,7 @@
 #include <catch2/catch_approx.hpp>
 #include <list>
 #include <map>
+#include <array>
 
 #include "lua.hpp"
 
