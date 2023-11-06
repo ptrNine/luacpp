@@ -1,5 +1,5 @@
 set(LUA_VARIANT "luajit" CACHE STRING "Lua variant, can be lua or luajit")
-set(LUA_GIT_VERSION "v2.1" CACHE STRING "Lua version from git repository")
+set(LUA_GIT_VERSION "v2.1.ROLLING" CACHE STRING "Lua version from git repository")
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" OR CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     set(_cxx_flags
@@ -45,12 +45,14 @@ git_submodule_build(Catch2
 
 if (LUA_VARIANT STREQUAL "lua")
     set(_patch "CMake/lua-make.patch.in")
+    set(_lua_submodule_name "lua")
 endif()
 if (LUA_VARIANT STREQUAL "luajit")
     add_compile_definitions(WITH_LUAJIT)
+    set(_lua_submodule_name "LuaJIT")
 endif()
 
-git_submodule_make_build(${LUA_VARIANT} GIT_VERSION ${LUA_GIT_VERSION} PATCHES ${_patch})
+git_submodule_make_build(${_lua_submodule_name} GIT_VERSION ${LUA_GIT_VERSION} PATCHES ${_patch})
 
 find_package(Catch2 REQUIRED)
 find_package(PkgConfig REQUIRED)
